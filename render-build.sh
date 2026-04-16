@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Exit on error
 set -o errexit
 
-# Install system dependencies
+# Install poppler for PDF to PPT
 apt-get update && apt-get install -y poppler-utils
 
-# Install Python dependencies
+# Upgrade pip
 pip install --upgrade pip
+
+# Install requirements
 pip install -r requirements.txt
