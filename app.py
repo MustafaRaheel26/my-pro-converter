@@ -44,16 +44,9 @@ logging.basicConfig(level=logging.INFO)
 # Allowed extensions
 ALLOWED_EXTENSIONS = {'pdf', 'png', 'jpg', 'jpeg', 'docx', 'xlsx', 'pptx', 'txt'}
 
-# ================= DATABASE FIX FOR RENDER (Persistent Storage) =================
-# This fixes the database issue on Render's free tier
-if os.environ.get('RENDER'):
-    # On Render cloud - use persistent storage
-    DATABASE = '/var/data/users.db'
-    # Ensure the directory exists
-    os.makedirs('/var/data', exist_ok=True)
-else:
-    # On local computer
-    DATABASE = 'users.db'
+# ================= DATABASE CONFIGURATION (FIXED FOR RENDER) =================
+# Use local directory - works on both local and Render free tier
+DATABASE = 'users.db'
 
 @contextmanager
 def get_db():
@@ -84,6 +77,7 @@ def init_db():
                       FOREIGN KEY (user_id) REFERENCES users (id))''')
         conn.commit()
 
+# Initialize database
 init_db()
 
 # ================= CLEANUP =================
@@ -207,7 +201,7 @@ def pdf_to_ppt(file_infos):
     out_path = os.path.join(app.config['CONVERTED_FOLDER'], out_name)
 
     try:
-        # Try to use pdf2image if poppler is available (will work on Render after we install it)
+        # Try to use pdf2image if poppler is available
         images = convert_from_path(f['path'], dpi=150)
         prs = Presentation()
 
@@ -522,7 +516,6 @@ def download_file(filename):
         return send_file(file_path, as_attachment=True)
     return "File not found", 404
 
-# ================= ADDED HISTORY AND DELETE ROUTES (for completeness) =================
 @app.route("/history")
 def history():
     if 'user' not in session:
