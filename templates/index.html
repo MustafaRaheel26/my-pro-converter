@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>ProConverter - Free Online File Converter</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+
+<!-- Loading Overlay -->
+<div class="loading-overlay" id="loadingOverlay">
+    <div class="loading-spinner"></div>
+    <p>Processing your file...</p>
+</div>
+
+<!-- Success Notification -->
+<div class="success-notification" id="successNotification">
+    <i class="fas fa-check-circle"></i>
+    <span>File converted successfully!</span>
+</div>
+
+<!-- Header -->
+<header class="main-header">
+    <div class="logo">
+        <span class="logo-pro">Pro</span>
+        <span class="logo-converter">Converter</span>
+    </div>
+
+    <div id="hamburger" class="hamburger">
+        <span></span><span></span><span></span>
+    </div>
+
+    <nav class="header-nav" id="nav-links">
+        <a href="#home" class="active">Home</a>
+        <a href="#pdf-tools">PDF Tools</a>
+        <a href="#image-tools">Image Tools</a>
+        <a href="#document-tools">Document</a>
+        <a href="#all-tools">All Tools</a>
+    </nav>
+
+    <div class="auth-buttons">
+        {% if user %}
+            <div class="user-profile">
+                <i class="fas fa-user-circle"></i>
+                <span>{{ user }}</span>
+            </div>
+            <a href="/logout" class="logout-btn"><i class="fas fa-sign-out-alt"></i> Logout</a>
+        {% else %}
+            <a href="#" id="open-signup" class="signup-btn"><i class="fas fa-user-plus"></i> Sign Up</a>
+            <a href="#" id="open-login" class="login-btn"><i class="fas fa-sign-in-alt"></i> Login</a>
+        {% endif %}
+    </div>
+</header>
+
+<!-- Hero Section -->
+<section class="hero" id="home">
+    <div class="hero-content">
+        <h1>Convert Anything,<br><span class="gradient-text">Instantly & Securely</span></h1>
+        <p class="hero-subtitle">Your all-in-one solution for PDF, image, and document conversion. Fast, free, and private.</p>
+
+        <!-- Drag & Drop Upload Area -->
+        <div class="upload-area" id="uploadArea">
+            <i class="fas fa-cloud-upload-alt"></i>
+            <h3>Drag & Drop Files Here</h3>
+            <p>or</p>
+            <label class="upload-btn">Browse Files</label>
+            <input type="file" id="fileInput" multiple style="display: none;">
+            <p class="file-info">Supported: PDF, PNG, JPG, JPEG, DOCX, XLSX, PPTX (Max 50MB)</p>
+        </div>
+
+        <!-- Progress Bar -->
+        <div class="progress-container" id="progressContainer">
+            <div class="progress-bar" id="progressBar"></div>
+        </div>
+
+        <a href="#all-tools" class="hero-btn">Explore All Tools <i class="fas fa-arrow-right"></i></a>
+    </div>
+</section>
+
+<!-- Tools Section -->
+<section class="tools-section" id="all-tools">
+    <div class="container">
+        <div class="section-header">
+            <h2>All <span class="gradient-text">Conversion Tools</span></h2>
+            <p>Choose from 15+ powerful tools to handle your files</p>
+        </div>
+
+        <!-- PDF Tools -->
+        <div class="tool-category" id="pdf-tools">
+            <h3><i class="fas fa-file-pdf" style="color: #e63946;"></i> PDF Tools</h3>
+            <div class="tools-grid">
+                <div class="tool-card" data-tool="merge">
+                    <i class="fas fa-compress-alt"></i>
+                    <h4>Merge PDF</h4>
+                    <p>Combine multiple PDFs into one</p>
+                </div>
+                <div class="tool-card" data-tool="pdf-to-word">
+                    <i class="fas fa-file-word"></i>
+                    <h4>PDF to Word</h4>
+                    <p>Convert PDF to editable DOCX</p>
+                </div>
+                <div class="tool-card" data-tool="pdf-to-excel">
+                    <i class="fas fa-file-excel"></i>
+                    <h4>PDF to Excel</h4>
+                    <p>Extract tables to XLSX</p>
+                </div>
+                <div class="tool-card" data-tool="pdf-to-ppt">
+                    <i class="fas fa-file-powerpoint"></i>
+                    <h4>PDF to PPT</h4>
+                    <p>Convert PDF to PowerPoint</p>
+                </div>
+                <div class="tool-card" data-tool="split-pdf">
+                    <i class="fas fa-cut"></i>
+                    <h4>Split PDF</h4>
+                    <p>Extract pages from PDF</p>
+                </div>
+                <div class="tool-card" data-tool="compress-pdf">
+                    <i class="fas fa-compress"></i>
+                    <h4>Compress PDF</h4>
+                    <p>Reduce PDF file size</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Image Tools -->
+        <div class="tool-category" id="image-tools">
+            <h3><i class="fas fa-image" style="color: #4a90e2;"></i> Image Tools</h3>
+            <div class="tools-grid">
+                <div class="tool-card" data-tool="png-to-jpg">
+                    <i class="fas fa-exchange-alt"></i>
+                    <h4>PNG to JPG</h4>
+                    <p>Convert PNG images to JPG</p>
+                </div>
+                <div class="tool-card" data-tool="jpg-to-png">
+                    <i class="fas fa-sync-alt"></i>
+                    <h4>JPG to PNG</h4>
+                    <p>Convert JPG to transparent PNG</p>
+                </div>
+                <div class="tool-card" data-tool="image-compressor">
+                    <i class="fas fa-file-archive"></i>
+                    <h4>Image Compressor</h4>
+                    <p>Reduce image size</p>
+                </div>
+                <div class="tool-card" data-tool="background-remover">
+                    <i class="fas fa-magic"></i>
+                    <h4>Background Remover</h4>
+                    <p>AI-powered background removal</p>
+                </div>
+                <div class="tool-card" data-tool="image-to-pdf">
+                    <i class="fas fa-file-pdf"></i>
+                    <h4>Image to PDF</h4>
+                    <p>Convert images to PDF</p>
+                </div>
+                <div class="tool-card" data-tool="resize-image">
+                    <i class="fas fa-expand"></i>
+                    <h4>Resize Image</h4>
+                    <p>Change image dimensions</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Document Tools -->
+        <div class="tool-category" id="document-tools">
+            <h3><i class="fas fa-file-alt" style="color: #2ecc71;"></i> Document Tools</h3>
+            <div class="tools-grid">
+                <div class="tool-card" data-tool="word-to-pdf">
+                    <i class="fas fa-file-pdf"></i>
+                    <h4>Word to PDF</h4>
+                    <p>Convert DOCX to PDF</p>
+                </div>
+                <div class="tool-card" data-tool="excel-to-pdf">
+                    <i class="fas fa-file-pdf"></i>
+                    <h4>Excel to PDF</h4>
+                    <p>Convert XLSX to PDF</p>
+                </div>
+                <div class="tool-card" data-tool="ppt-to-pdf">
+                    <i class="fas fa-file-pdf"></i>
+                    <h4>PPT to PDF</h4>
+                    <p>Convert PowerPoint to PDF</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- How It Works -->
+<section class="how-it-works">
+    <div class="container">
+        <div class="section-header">
+            <h2>How It <span class="gradient-text">Works</span></h2>
+            <p>Three simple steps to convert your files</p>
+        </div>
+        <div class="steps-container">
+            <div class="step">
+                <div class="step-icon"><i class="fas fa-cloud-upload-alt"></i></div>
+                <h3>1. Upload File</h3>
+                <p>Drag & drop or browse to select your file</p>
+            </div>
+            <div class="step">
+                <div class="step-icon"><i class="fas fa-cogs"></i></div>
+                <h3>2. Automatic Processing</h3>
+                <p>We process your file instantly in the cloud</p>
+            </div>
+            <div class="step">
+                <div class="step-icon"><i class="fas fa-download"></i></div>
+                <h3>3. Download Result</h3>
+                <p>Get your converted file instantly</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Benefits -->
+<section class="benefits">
+    <div class="container">
+        <div class="section-header">
+            <h2>Why Choose <span class="gradient-text">ProConverter</span></h2>
+        </div>
+        <div class="benefits-grid">
+            <div class="benefit-card">
+                <i class="fas fa-bolt"></i>
+                <h4>Lightning Fast</h4>
+                <p>Convert files in seconds with our optimized engine</p>
+            </div>
+            <div class="benefit-card">
+                <i class="fas fa-shield-alt"></i>
+                <h4>Secure & Private</h4>
+                <p>Files are automatically deleted after 1 hour</p>
+            </div>
+            <div class="benefit-card">
+                <i class="fas fa-star"></i>
+                <h4>High Quality</h4>
+                <p>Maintain original quality in all conversions</p>
+            </div>
+            <div class="benefit-card">
+                <i class="fas fa-infinity"></i>
+                <h4>Unlimited Use</h4>
+                <p>No limits, no subscriptions, completely free</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Auth Modals -->
+<!-- Signup Modal -->
+<div class="auth-modal" id="signup-modal">
+    <div class="auth-box">
+        <span id="close-signup" class="close-btn">&times;</span>
+        <i class="fas fa-user-plus auth-icon"></i>
+        <h3>Create Account</h3>
+        {% if signup_error %}
+            <p class="modal-error">{{ signup_error }}</p>
+        {% endif %}
+        <form method="POST" action="/auth">
+            <div class="input-group">
+                <i class="fas fa-user"></i>
+                <input type="text" name="username" placeholder="Username" required>
+            </div>
+            <div class="input-group">
+                <i class="fas fa-envelope"></i>
+                <input type="email" name="email" placeholder="Email" required>
+            </div>
+            <div class="input-group">
+                <i class="fas fa-lock"></i>
+                <input type="password" name="password" placeholder="Password" required>
+            </div>
+            <input type="hidden" name="type" value="signup">
+            <button type="submit" class="auth-submit">Sign Up <i class="fas fa-arrow-right"></i></button>
+        </form>
+        <p>Already have an account? <span id="switch-login" class="switch-link">Login</span></p>
+    </div>
+</div>
+
+<!-- Login Modal -->
+<div class="auth-modal" id="login-modal">
+    <div class="auth-box">
+        <span id="close-login" class="close-btn">&times;</span>
+        <i class="fas fa-sign-in-alt auth-icon"></i>
+        <h3>Welcome Back</h3>
+        {% if login_error %}
+            <p class="modal-error">{{ login_error }}</p>
+        {% endif %}
+        <form method="POST" action="/auth">
+            <div class="input-group">
+                <i class="fas fa-user"></i>
+                <input type="text" name="username" placeholder="Username" required>
+            </div>
+            <div class="input-group">
+                <i class="fas fa-lock"></i>
+                <input type="password" name="password" placeholder="Password" required>
+            </div>
+            <input type="hidden" name="type" value="login">
+            <button type="submit" class="auth-submit">Login <i class="fas fa-arrow-right"></i></button>
+        </form>
+        <p>Don't have an account? <span id="switch-signup" class="switch-link">Sign Up</span></p>
+    </div>
+</div>
+
+<!-- Footer -->
+<footer class="main-footer">
+    <div class="footer-container">
+        <div class="footer-content">
+            <div class="footer-section">
+                <h4>ProConverter</h4>
+                <p>Your complete solution for file conversion. Fast, secure, and free.</p>
+                <div class="social-links">
+                    <a href="#"><i class="fab fa-facebook"></i></a>
+                    <a href="#"><i class="fab fa-twitter"></i></a>
+                    <a href="#"><i class="fab fa-linkedin"></i></a>
+                    <a href="#"><i class="fab fa-github"></i></a>
+                </div>
+            </div>
+            <div class="footer-section">
+                <h4>Quick Links</h4>
+                <ul>
+                    <li><a href="#home">Home</a></li>
+                    <li><a href="#all-tools">Tools</a></li>
+                    <li><a href="#">Privacy Policy</a></li>
+                    <li><a href="#">Terms of Service</a></li>
+                </ul>
+            </div>
+            <div class="footer-section">
+                <h4>Contact</h4>
+                <p><i class="fas fa-envelope"></i> support@proconverter.com</p>
+                <p><i class="fas fa-phone"></i> +92 300 1234567</p>
+                <p><i class="fas fa-map-marker-alt"></i> Karachi, Pakistan</p>
+            </div>
+        </div>
+    </div>
+    <div class="footer-bottom">
+        <p>© 2026 Pro Converter. All rights reserved.</p>
+    </div>
+</footer>
+
+<script src="{{ url_for('static', filename='js/script.js') }}"></script>
+</body>
+</html>
