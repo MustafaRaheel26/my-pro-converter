@@ -7,7 +7,6 @@ import threading
 import time
 import logging
 from contextlib import contextmanager
-
 # PDF libraries
 import PyPDF2
 from pdf2docx import Converter
@@ -19,6 +18,11 @@ from PIL import Image
 from docx import Document
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table
+from reportlab.platypus.tables import TableStyle
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT, TA_JUSTIFY
+from reportlab.lib import colors
 
 app = Flask(__name__)
 app.secret_key = "supersecretkeyOmniConverter2026"
@@ -213,8 +217,30 @@ def compress_image(file_infos):
     base_name = f['original'].rsplit('.', 1)[0]
     out_name = f"{base_name}_compressed.{f['ext']}"
     out_path = os.path.join(app.config['CONVERTED_FOLDER'], out_name)
+
     image = Image.open(f['path'])
-    image.save(out_path, optimize=True, quality=50)
+    if f['ext'] in ['jpg', 'jpeg'] and image.mode in ('RGBA', 'LA', 'P'):
+        image = image.convert('RGB')
+
+    # Aggressive resizing for better compression
+    max_size = 1280
+    if max(image.width, image.height) > max_size:
+        ratio = max_size / float(max(image.width, image.height))
+        new_size = (int(image.width * ratio), int(image.height * ratio))
+        image = image.resize(new_size, Image.Resampling.LANCZOS)
+    
+    # Convert to RGB if needed for further optimization
+    if image.mode not in ('RGB', 'L'):
+        image = image.convert('RGB')
+
+    if f['ext'] in ['jpg', 'jpeg']:
+        # Aggressive JPG compression
+        image.save(out_path, 'JPEG', optimize=True, quality=30, progressive=True)
+    else:
+        # Aggressive PNG compression with quantization
+        image = image.convert('P', palette=Image.Palette.ADAPTIVE, colors=256)
+        image.save(out_path, 'PNG', optimize=True, compress_level=9)
+
     return out_path, out_name
 
 def image_to_pdf(file_infos):
@@ -252,83 +278,114 @@ def word_to_pdf(file_infos):
     out_name = f"{base_name}.pdf"
     out_path = os.path.join(app.config['CONVERTED_FOLDER'], out_name)
     doc = Document(f['path'])
-    c = canvas.Canvas(out_path, pagesize=letter)
-    width, height = letter
-    margin = 50
-    max_width = width - margin * 2
-    y = height - margin
-    c.setFont("Helvetica", 12)
 
-    def split_text(text):
-        words = text.split()
-        lines = []
-        line = ""
-        for word in words:
-            candidate = word if not line else f"{line} {word}"
-            if c.stringWidth(candidate, "Helvetica", 12) <= max_width:
-                line = candidate
-            else:
-                lines.append(line)
-                line = word
-        if line:
-            lines.append(line)
-        return lines or [""]
+    def escape(text):
+        return (
+            text.replace('&', '&amp;')
+            .replace('<', '&lt;')
+            .replace('>', '&gt;')
+            .replace('\n', '<br/>')
+        )
 
-    def draw_paragraph(text):
-        nonlocal y
-        lines = split_text(text)
-        for line in lines:
-            if y < margin + 20:
-                c.showPage()
-                c.setFont("Helvetica", 12)
-                y = height - margin
-            c.drawString(margin, y, line)
-            y -= 16
-        y -= 10
+    def get_font_size(run):
+        """Extract font size from run or use default"""
+        if run.font.size:
+            return run.font.size.pt
+        return 11
 
+    def format_run(run):
+        text = escape(run.text)
+        font_size = get_font_size(run)
+        
+        # Apply text formatting
+        if run.bold:
+            text = f"<b>{text}</b>"
+        if run.italic:
+            text = f"<i>{text}</i>"
+        if run.underline:
+            text = f"<u>{text}</u>"
+        
+        # Apply font size if significantly different
+        if font_size != 11:
+            text = f"<font size={int(font_size/11)}>{text}</font>"
+        
+        return text
+
+    styles = getSampleStyleSheet()
+    
+    # Define better styles that preserve more formatting
+    body_style = ParagraphStyle(
+        name='BodyStyle',
+        parent=styles['BodyText'],
+        fontName='Courier',
+        fontSize=11,
+        leading=14,
+        alignment=TA_LEFT,
+        spaceAfter=8,
+    )
+    heading1_style = ParagraphStyle(
+        name='Heading1Style',
+        parent=styles['Heading1'],
+        fontName='Courier-Bold',
+        fontSize=18,
+        leading=22,
+        spaceAfter=12,
+    )
+    heading2_style = ParagraphStyle(
+        name='Heading2Style',
+        parent=styles['Heading2'],
+        fontName='Courier-Bold',
+        fontSize=14,
+        leading=18,
+        spaceAfter=10,
+    )
+    heading3_style = ParagraphStyle(
+        name='Heading3Style',
+        parent=styles['Heading3'],
+        fontName='Courier-Bold',
+        fontSize=12,
+        leading=15,
+        spaceAfter=8,
+    )
+
+    elements = []
     for paragraph in doc.paragraphs:
-        text = paragraph.text.strip()
-        if not text:
-            y -= 10
+        paragraph_text = ''.join(format_run(run) for run in paragraph.runs)
+        if not paragraph_text.strip():
+            elements.append(Spacer(1, 8))
             continue
-        draw_paragraph(text)
+        
+        # Determine style based on paragraph style name
+        style_name = paragraph.style.name.lower()
+        if 'heading 1' in style_name:
+            style = heading1_style
+        elif 'heading 2' in style_name:
+            style = heading2_style
+        elif 'heading 3' in style_name:
+            style = heading3_style
+        else:
+            style = body_style
+        
+        elements.append(Paragraph(paragraph_text, style))
 
     for table in doc.tables:
-        y -= 10
-        for row in table.rows:
-            row_text = ' | '.join(cell.text.strip() for cell in row.cells)
-            draw_paragraph(row_text)
+        table_data = [[cell.text.strip() for cell in row.cells] for row in table.rows]
+        table_style = TableStyle([
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (-1, -1), 'Courier'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
+        ])
+        tbl = Table(table_data, hAlign='LEFT')
+        tbl.setStyle(table_style)
+        elements.append(tbl)
+        elements.append(Spacer(1, 12))
 
-    c.save()
-    return out_path, out_name
-
-def background_remover(file_infos):
-    """
-    Simple background remover using PIL (no AI, just makes white-ish pixels transparent).
-    """
-    if len(file_infos) != 1:
-        raise ValueError("Please select exactly 1 image file to remove background")
-    
-    f = file_infos[0]
-    if f['ext'] not in ['png', 'jpg', 'jpeg']:
-        raise ValueError(f"File '{f['original']}' is not a supported image. Only PNG and JPG files can have background removed.")
-    
-    base_name = f['original'].rsplit('.', 1)[0]
-    out_name = f"{base_name}_nobg.png"
-    out_path = os.path.join(app.config['CONVERTED_FOLDER'], out_name)
-
-    image = Image.open(f['path']).convert('RGBA')
-    data = image.getdata()
-
-    new_data = []
-    for item in data:
-        if item[0] > 200 and item[1] > 200 and item[2] > 200:
-            new_data.append((255, 255, 255, 0))
-        else:
-            new_data.append(item)
-
-    image.putdata(new_data)
-    image.save(out_path, 'PNG')
+    doc_pdf = SimpleDocTemplate(out_path, pagesize=letter, leftMargin=40, rightMargin=40, topMargin=40, bottomMargin=40)
+    doc_pdf.build(elements)
     return out_path, out_name
 
 def split_pdf(file_infos, start_page=1, end_page=None):
@@ -352,16 +409,19 @@ def split_pdf(file_infos, start_page=1, end_page=None):
     if start_page < 1 or end_page < start_page or end_page > total_pages:
         raise ValueError(f"Invalid page range. Use values between 1 and {total_pages}.")
 
-    writer = PyPDF2.PdfWriter()
-    for page_index in range(start_page - 1, end_page):
-        writer.add_page(reader.pages[page_index])
-
     base_name = f['original'].rsplit('.', 1)[0]
-    out_name = f"{base_name}_split.pdf"
-    out_path = os.path.join(app.config['CONVERTED_FOLDER'], out_name)
-    with open(out_path, 'wb') as out_file:
-        writer.write(out_file)
-    return out_path, out_name
+    outputs = []
+    for page_index in range(start_page - 1, end_page):
+        writer = PyPDF2.PdfWriter()
+        writer.add_page(reader.pages[page_index])
+        page_number = page_index + 1
+        out_name = f"{base_name}_page_{page_number}.pdf"
+        out_path = os.path.join(app.config['CONVERTED_FOLDER'], out_name)
+        with open(out_path, 'wb') as out_file:
+            writer.write(out_file)
+        outputs.append((out_path, out_name))
+
+    return outputs
 
 def compress_pdf(file_infos):
     if len(file_infos) != 1:
@@ -374,13 +434,26 @@ def compress_pdf(file_infos):
     base_name = f['original'].rsplit('.', 1)[0]
     out_name = f"{base_name}_compressed.pdf"
     out_path = os.path.join(app.config['CONVERTED_FOLDER'], out_name)
+    
     reader = PyPDF2.PdfReader(f['path'])
     writer = PyPDF2.PdfWriter()
+    
     for page in reader.pages:
+        try:
+            # Compress content streams
+            page.compress_content_streams()
+            
+            # Remove duplication in content streams
+            if "/Contents" in page:
+                page["/Contents"].get_object().decodedSelf
+        except Exception:
+            pass
         writer.add_page(page)
-    writer.add_metadata({})
+    
+    # Write with additional compression
     with open(out_path, 'wb') as out_file:
         writer.write(out_file)
+    
     return out_path, out_name
 
 # Map tool IDs to functions
@@ -392,7 +465,6 @@ CONVERSION_FUNCTIONS = {
     'image-compressor': compress_image,
     'image-to-pdf': image_to_pdf,
     'word-to-pdf': word_to_pdf,
-    'background-remover': background_remover,
     'split-pdf': split_pdf,
     'compress-pdf': compress_pdf,
 }
@@ -455,13 +527,15 @@ def convert():
         if tool == 'split-pdf':
             start_page = request.form.get('start_page')
             end_page = request.form.get('end_page')
-            out_path, out_name = func(
+            result = func(
                 saved_files,
                 start_page=int(start_page) if start_page else None,
                 end_page=int(end_page) if end_page else None,
             )
         else:
-            out_path, out_name = func(saved_files)
+            result = func(saved_files)
+
+        output_files = result if isinstance(result, list) else [result]
 
         # Log conversion if user logged in
         if 'user' in session:
@@ -471,14 +545,23 @@ def convert():
                 user_row = c.fetchone()
                 if user_row:
                     user_id = user_row[0]
-                    c.execute("INSERT INTO conversions (user_id, tool, original_filename, converted_filename) VALUES (?,?,?,?)",
-                             (user_id, tool, saved_files[0]['original'], out_name))
+                    for _, out_name in output_files:
+                        c.execute("INSERT INTO conversions (user_id, tool, original_filename, converted_filename) VALUES (?,?,?,?)",
+                                  (user_id, tool, saved_files[0]['original'], out_name))
                     conn.commit()
+
+        if len(output_files) == 1:
+            out_path, out_name = output_files[0]
+            return jsonify({
+                'success': True,
+                'download_url': f'/download/{out_name}',
+                'filename': out_name
+            })
 
         return jsonify({
             'success': True,
-            'download_url': f'/download/{out_name}',
-            'filename': out_name
+            'filenames': [out_name for _, out_name in output_files],
+            'download_urls': [f'/download/{out_name}' for _, out_name in output_files]
         })
     except Exception as e:
         logging.error(f"Conversion error: {str(e)}")
@@ -505,6 +588,14 @@ def history():
         """, (session['user'],))
         rows = c.fetchall()
     return render_template("history.html", history=rows, user=session['user'])
+
+@app.route("/terms")
+def terms():
+    return render_template("terms.html", user=session.get("user"))
+
+@app.route("/privacy")
+def privacy():
+    return render_template("privacy.html", user=session.get("user"))
 
 @app.route("/delete/<filename>")
 def delete_file(filename):

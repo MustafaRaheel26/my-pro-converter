@@ -215,14 +215,27 @@ function uploadFiles(files) {
         progressBar.style.width = "0%";
 
         if (data.success) {
-          showNotification("File converted successfully!");
-          // Trigger download
-          const a = document.createElement("a");
-          a.href = data.download_url;
-          a.download = data.filename;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
+          if (data.download_urls && data.download_urls.length > 0) {
+            showNotification(
+              "Files converted successfully! Downloading all results...",
+            );
+            data.download_urls.forEach((url, index) => {
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = data.filenames ? data.filenames[index] : "";
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+            });
+          } else {
+            showNotification("File converted successfully!");
+            const a = document.createElement("a");
+            a.href = data.download_url;
+            a.download = data.filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+          }
         } else {
           showNotification(data.error || "Conversion failed", "error");
         }

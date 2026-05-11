@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Terms of Service - Omni Convertor</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/style.css') }}"
+    />
+  </head>
+  <body>
+    <!-- Header -->
+    <header class="main-header">
+      <div class="logo">
+        <span class="logo-pro">Omni</span>
+        <span class="logo-converter">Convertor</span>
+      </div>
+
+      <div id="hamburger" class="hamburger">
+        <span></span><span></span><span></span>
+      </div>
+
+      <nav class="header-nav" id="nav-links">
+        <a href="/">Home</a>
+        <a href="/#pdf-tools">PDF Tools</a>
+        <a href="/#image-tools">Image Tools</a>
+        <a href="/#document-tools">Document</a>
+        <a href="/#all-tools">All Tools</a>
+        <a href="/terms" class="active">Terms</a>
+        <a href="/privacy">Privacy</a>
+      </nav>
+
+      <div class="auth-buttons">
+        {% if user %}
+        <div class="user-profile">
+          <i class="fas fa-user-circle"></i>
+          <span>{{ user }}</span>
+        </div>
+        <a href="/logout" class="logout-btn"
+          ><i class="fas fa-sign-out-alt"></i> Logout</a
+        >
+        {% else %}
+        <a href="/" class="signup-btn"
+          ><i class="fas fa-user-plus"></i> Sign Up</a
+        >
+        <a href="/" class="login-btn"
+          ><i class="fas fa-sign-in-alt"></i> Login</a
+        >
+        {% endif %}
+      </div>
+    </header>
+
+    <!-- Policy Section -->
+    <section class="policy-section">
+      <div class="policy-container">
+        <h1>Terms of Service</h1>
+
+        <div class="policy-content">
+          <h2>I. Acceptance of Terms</h2>
+          <p>
+            By using this website, you enter into a legally binding agreement to
+            follow these terms. If you are using this for a business, you
+            represent that you have the authority to bind that entity to these
+            terms.
+          </p>
+
+          <h2>II. Permitted Use &amp; Service Scope</h2>
+          <ul>
+            <li>
+              <strong>License:</strong> We grant you a limited, non-exclusive
+              license to use our tools for personal or commercial file
+              manipulation.
+            </li>
+            <li>
+              <strong>"As-Is" Provision:</strong> The service is provided
+              without warranties of any kind regarding formatting accuracy or
+              100% uptime.
+            </li>
+            <li>
+              <strong>Modifications:</strong> We reserve the right to update
+              features or tools without prior notice.
+            </li>
+          </ul>
+
+          <h2>III. User Content &amp; Intellectual Property</h2>
+          <ul>
+            <li>
+              <strong>Ownership:</strong> You retain 100% ownership of any files
+              you upload.
+            </li>
+            <li>
+              <strong>Warranties:</strong> You warrant that you have the legal
+              right/permission to convert the content you upload and that the
+              content does not violate any third-party copyrights.
+            </li>
+            <li>
+              <strong>Prohibited Content:</strong> You may not upload content
+              that is illegal, contains malware, or is intended to harass
+              others.
+            </li>
+          </ul>
+
+          <h2>IV. Limitation of Liability &amp; Indemnification</h2>
+          <ul>
+            <li>
+              <strong>Liability Cap:</strong> To the maximum extent permitted by
+              law, we are not liable for any lost profits or data resulting from
+              service use.
+            </li>
+            <li>
+              <strong>Indemnity:</strong> You agree to indemnify us against any
+              claims arising from your violation of these terms or infringement
+              of third-party rights.
+            </li>
+          </ul>
+
+          <h2>V. Governing Law &amp; Dispute Resolution</h2>
+          <ul>
+            <li>
+              <strong>Jurisdiction:</strong> These terms are governed by
+              international law, without regard to conflict of law principles.
+            </li>
+            <li>
+              <strong>Arbitration:</strong> Any disputes arising from these
+              terms shall be resolved between the individual parties through
+              binding arbitration.
+            </li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <script>
+      // Hamburger menu functionality
+      const hamburger = document.getElementById("hamburger");
+      const navLinks = document.getElementById("nav-links");
+
+      hamburger.addEventListener("click", () => {
+        hamburger.classList.toggle("active");
+        navLinks.classList.toggle("active");
+      });
+
+      // Close menu when a link is clicked
+      document.querySelectorAll(".header-nav a").forEach((link) => {
+        link.addEventListener("click", () => {
+          hamburger.classList.remove("active");
+          navLinks.classList.remove("active");
+        });
+      });
+
+      // Scroll effect on header
+      window.addEventListener("scroll", () => {
+        const header = document.querySelector(".main-header");
+        if (window.scrollY > 50) {
+          header.classList.add("scrolled");
+        } else {
+          header.classList.remove("scrolled");
+        }
+      });
+    </script>
+  </body>
+</html>

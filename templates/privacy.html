@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Privacy Policy - Omni Convertor</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/style.css') }}"
+    />
+  </head>
+  <body>
+    <!-- Header -->
+    <header class="main-header">
+      <div class="logo">
+        <span class="logo-pro">Omni</span>
+        <span class="logo-converter">Convertor</span>
+      </div>
+
+      <div id="hamburger" class="hamburger">
+        <span></span><span></span><span></span>
+      </div>
+
+      <nav class="header-nav" id="nav-links">
+        <a href="/">Home</a>
+        <a href="/#pdf-tools">PDF Tools</a>
+        <a href="/#image-tools">Image Tools</a>
+        <a href="/#document-tools">Document</a>
+        <a href="/#all-tools">All Tools</a>
+        <a href="/terms">Terms</a>
+        <a href="/privacy" class="active">Privacy</a>
+      </nav>
+
+      <div class="auth-buttons">
+        {% if user %}
+        <div class="user-profile">
+          <i class="fas fa-user-circle"></i>
+          <span>{{ user }}</span>
+        </div>
+        <a href="/logout" class="logout-btn"
+          ><i class="fas fa-sign-out-alt"></i> Logout</a
+        >
+        {% else %}
+        <a href="/" class="signup-btn"
+          ><i class="fas fa-user-plus"></i> Sign Up</a
+        >
+        <a href="/" class="login-btn"
+          ><i class="fas fa-sign-in-alt"></i> Login</a
+        >
+        {% endif %}
+      </div>
+    </header>
+
+    <!-- Policy Section -->
+    <section class="policy-section">
+      <div class="policy-container">
+        <h1>Privacy Policy</h1>
+
+        <div class="policy-content">
+          <h2>Introduction</h2>
+          <p>
+            This Privacy Policy describes how we collect, use, and protect your
+            information across our document and image conversion platform. We
+            operate on a Privacy-by-Design principle, ensuring that data
+            minimization is at the core of our technical architecture.
+          </p>
+
+          <h2>I. Data Processing &amp; The "Zero-Retention" Protocol</h2>
+          <ul>
+            <li>
+              <strong>User Content:</strong> We process uploaded documents
+              (e.g., PDF, DOCX) and images (e.g., PNG, JPEG) solely to perform
+              the requested conversion or compression.
+            </li>
+            <li>
+              <strong>Temporary Storage:</strong> Files are stored in a
+              volatile, encrypted temporary directory during processing.
+            </li>
+            <li>
+              <strong>Automated Deletion:</strong> All uploaded and output files
+              are automatically and permanently purged from our servers within
+              one (1) hour.
+            </li>
+            <li>
+              <strong>No Access:</strong> Our staff and third-party automated
+              systems do not "read," "mine," or "train AI" on your uploaded
+              content.
+            </li>
+          </ul>
+
+          <h2>II. Legal Basis for Processing</h2>
+          <ul>
+            <li>
+              <strong>Contractual Necessity:</strong> Processing is required to
+              fulfill the service you have initiated.
+            </li>
+            <li>
+              <strong>Legitimate Interest:</strong> We collect non-identifiable
+              technical data (IP address, browser type) for cybersecurity and
+              server load balancing.
+            </li>
+          </ul>
+
+          <h2>III. Data Security &amp; International Transfers</h2>
+          <ul>
+            <li>
+              <strong>Encryption:</strong> All data in transit is protected by
+              encryption.
+            </li>
+            <li>
+              <strong>Global Transfers:</strong> Your data may be processed on
+              servers located outside your home country; however, we ensure data
+              protection via Standard Contractual Clauses (SCCs).
+            </li>
+          </ul>
+
+          <h2>IV. Your Rights</h2>
+          <p>
+            Under global regulations, you have the right to access, rectify, or
+            request the deletion of any personal data we hold. Given our
+            one-hour deletion policy, we typically do not hold any personal data
+            after your session ends.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <script>
+      // Hamburger menu functionality
+      const hamburger = document.getElementById("hamburger");
+      const navLinks = document.getElementById("nav-links");
+
+      hamburger.addEventListener("click", () => {
+        hamburger.classList.toggle("active");
+        navLinks.classList.toggle("active");
+      });
+
+      // Close menu when a link is clicked
+      document.querySelectorAll(".header-nav a").forEach((link) => {
+        link.addEventListener("click", () => {
+          hamburger.classList.remove("active");
+          navLinks.classList.remove("active");
+        });
+      });
+
+      // Scroll effect on header
+      window.addEventListener("scroll", () => {
+        const header = document.querySelector(".main-header");
+        if (window.scrollY > 50) {
+          header.classList.add("scrolled");
+        } else {
+          header.classList.remove("scrolled");
+        }
+      });
+    </script>
+  </body>
+</html>
