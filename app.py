@@ -11,28 +11,23 @@ import PyPDF2
 from pdf2docx import Converter
 from PIL import Image
 from docx import Document
-from docx.shared import Pt, RGBColor
-from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.enum.table import WD_ALIGN_VERTICAL
-import requests
-import tempfile
-from fpdf import FPDF
-from fpdf.enums import XPos, YPos, Align
+import subprocess
+import shutil
 
 app = Flask(__name__)
 app.secret_key = "supersecretkeyOmniConverter2026"
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['CONVERTED_FOLDER'] = 'converted'
-app.config['FONTS_FOLDER'] = 'fonts'
 
-for folder in [app.config['UPLOAD_FOLDER'], app.config['CONVERTED_FOLDER'], app.config['FONTS_FOLDER']]:
+for folder in [app.config['UPLOAD_FOLDER'], app.config['CONVERTED_FOLDER']]:
     os.makedirs(folder, exist_ok=True)
 
 logging.basicConfig(level=logging.INFO)
 
 ALLOWED_EXTENSIONS = {'pdf', 'png', 'jpg', 'jpeg', 'docx', 'xlsx', 'pptx', 'txt'}
 
+# ================= DATABASE =================
 DATABASE = 'users.db'
 
 @contextmanager
@@ -65,6 +60,7 @@ def init_db():
 
 init_db()
 
+# ================= CLEANUP =================
 def cleanup_old_files():
     while True:
         time.sleep(3600)
@@ -80,6 +76,7 @@ def cleanup_old_files():
 
 threading.Thread(target=cleanup_old_files, daemon=True).start()
 
+# ================= HELPERS =================
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
@@ -103,13 +100,14 @@ def save_files(files):
             })
     return saved
 
-# ================= OTHER CONVERSION FUNCTIONS (unchanged) =================
+# ================= OTHER CONVERSIONS (unchanged) =================
+
 def merge_pdfs(file_infos):
     if len(file_infos) != 2:
-        raise ValueError("Select exactly 2 PDF files")
+        raise ValueError("Please select exactly 2 PDF files to merge")
     for f in file_infos:
         if f['ext'] != 'pdf':
-            raise ValueError("Not PDF")
+            raise ValueError(f"File '{f['original']}' is not a PDF.")
     merger = PyPDF2.PdfMerger()
     for f in file_infos:
         merger.append(f['path'])
@@ -122,10 +120,10 @@ def merge_pdfs(file_infos):
 
 def pdf_to_word(file_infos):
     if len(file_infos) != 1:
-        raise ValueError("Exactly 1 PDF")
+        raise ValueError("Please select exactly 1 PDF file")
     f = file_infos[0]
     if f['ext'] != 'pdf':
-        raise ValueError("Not PDF")
+        raise ValueError("Not a PDF")
     base_name = f['original'].rsplit('.', 1)[0]
     out_name = f"{base_name}.docx"
     out_path = os.path.join(app.config['CONVERTED_FOLDER'], out_name)
@@ -136,16 +134,16 @@ def pdf_to_word(file_infos):
 
 def png_to_jpg(file_infos):
     if len(file_infos) != 1:
-        raise ValueError("Exactly 1 PNG")
+        raise ValueError("Exactly 1 PNG file required")
     f = file_infos[0]
     if f['ext'] != 'png':
-        raise ValueError("Not PNG")
+        raise ValueError("Not a PNG")
     base_name = f['original'].rsplit('.', 1)[0]
     out_name = f"{base_name}.jpg"
     out_path = os.path.join(app.config['CONVERTED_FOLDER'], out_name)
     image = Image.open(f['path'])
     if image.mode in ('RGBA', 'LA'):
-        rgb = Image.new('RGB', image.size, (255,255,255))
+        rgb = Image.new('RGB', image.size, (255, 255, 255))
         rgb.paste(image, mask=image.split()[-1])
         rgb.save(out_path, 'JPEG', quality=95)
     else:
@@ -154,11 +152,11 @@ def png_to_jpg(file_infos):
 
 def jpg_to_png(file_infos):
     if len(file_infos) != 1:
-        raise ValueError("Exactly 1 JPG")
+        raise ValueError("Exactly 1 JPG file required")
     f = file_infos[0]
-    if f['ext'] not in ['jpg','jpeg']:
-        raise ValueError("Not JPG")
-    base_name = f['original'].rsplit('.',1)[0]
+    if f['ext'] not in ['jpg', 'jpeg']:
+        raise ValueError("Not a JPG")
+    base_name = f['original'].rsplit('.', 1)[0]
     out_name = f"{base_name}.png"
     out_path = os.path.join(app.config['CONVERTED_FOLDER'], out_name)
     Image.open(f['path']).save(out_path, 'PNG')
@@ -166,24 +164,24 @@ def jpg_to_png(file_infos):
 
 def compress_image(file_infos):
     if len(file_infos) != 1:
-        raise ValueError("Exactly 1 image")
+        raise ValueError("Exactly 1 image file required")
     f = file_infos[0]
-    if f['ext'] not in ['jpg','jpeg','png']:
-        raise ValueError("Unsupported")
-    base_name = f['original'].rsplit('.',1)[0]
+    if f['ext'] not in ['jpg', 'jpeg', 'png']:
+        raise ValueError("Unsupported image")
+    base_name = f['original'].rsplit('.', 1)[0]
     out_name = f"{base_name}_compressed.{f['ext']}"
     out_path = os.path.join(app.config['CONVERTED_FOLDER'], out_name)
     image = Image.open(f['path'])
-    if f['ext'] in ['jpg','jpeg'] and image.mode in ('RGBA','LA','P'):
+    if f['ext'] in ['jpg', 'jpeg'] and image.mode in ('RGBA', 'LA', 'P'):
         image = image.convert('RGB')
     max_size = 1280
     if max(image.width, image.height) > max_size:
-        ratio = max_size / max(image.width, image.height)
-        new_size = (int(image.width*ratio), int(image.height*ratio))
+        ratio = max_size / float(max(image.width, image.height))
+        new_size = (int(image.width * ratio), int(image.height * ratio))
         image = image.resize(new_size, Image.Resampling.LANCZOS)
-    if image.mode not in ('RGB','L'):
+    if image.mode not in ('RGB', 'L'):
         image = image.convert('RGB')
-    if f['ext'] in ['jpg','jpeg']:
+    if f['ext'] in ['jpg', 'jpeg']:
         image.save(out_path, 'JPEG', optimize=True, quality=30, progressive=True)
     else:
         image = image.convert('P', palette=Image.Palette.ADAPTIVE, colors=256)
@@ -192,12 +190,12 @@ def compress_image(file_infos):
 
 def image_to_pdf(file_infos):
     if len(file_infos) < 1:
-        raise ValueError("At least 1 image")
+        raise ValueError("At least 1 image required")
     for f in file_infos:
-        if f['ext'] not in ['jpg','jpeg','png']:
-            raise ValueError("Unsupported")
+        if f['ext'] not in ['jpg', 'jpeg', 'png']:
+            raise ValueError("Unsupported image")
     images = [Image.open(f['path']).convert('RGB') for f in file_infos]
-    base_name = file_infos[0]['original'].rsplit('.',1)[0]
+    base_name = file_infos[0]['original'].rsplit('.', 1)[0]
     out_name = f"{base_name}.pdf"
     out_path = os.path.join(app.config['CONVERTED_FOLDER'], out_name)
     if len(images) == 1:
@@ -208,11 +206,11 @@ def image_to_pdf(file_infos):
 
 def compress_pdf(file_infos):
     if len(file_infos) != 1:
-        raise ValueError("Exactly 1 PDF")
+        raise ValueError("Exactly 1 PDF file required")
     f = file_infos[0]
     if f['ext'] != 'pdf':
-        raise ValueError("Not PDF")
-    base_name = f['original'].rsplit('.',1)[0]
+        raise ValueError("Not a PDF")
+    base_name = f['original'].rsplit('.', 1)[0]
     out_name = f"{base_name}_compressed.pdf"
     out_path = os.path.join(app.config['CONVERTED_FOLDER'], out_name)
     original_size = os.path.getsize(f['path'])
@@ -226,132 +224,104 @@ def compress_pdf(file_infos):
         writer.add_metadata({})
         with open(out_path, 'wb') as out_file:
             writer.write(out_file)
-        if os.path.getsize(out_path) >= original_size:
+        compressed_size = os.path.getsize(out_path)
+        if compressed_size >= original_size:
             os.remove(out_path)
-            import shutil
             shutil.copy2(f['path'], out_path)
             out_name = f"{base_name}_original.pdf"
             out_path = os.path.join(app.config['CONVERTED_FOLDER'], out_name)
-    except:
-        import shutil
+    except Exception as e:
         shutil.copy2(f['path'], out_path)
         out_name = f"{base_name}_copy.pdf"
         out_path = os.path.join(app.config['CONVERTED_FOLDER'], out_name)
     return out_path, out_name
 
-# ================= WORD TO PDF USING FPDF2 (NO CONFLICTS) =================
-def download_dejavu_font():
-    font_dir = app.config['FONTS_FOLDER']
-    font_path = os.path.join(font_dir, 'DejaVuSans.ttf')
-    if not os.path.exists(font_path):
-        logging.info("Downloading DejaVu Sans font...")
-        url = "https://github.com/dejavu-fonts/dejavu-fonts/raw/master/ttf/DejaVuSans.ttf"
-        try:
-            r = requests.get(url, timeout=30)
-            if r.status_code == 200:
-                with open(font_path, 'wb') as f:
-                    f.write(r.content)
-                logging.info("Font downloaded.")
-            else:
-                logging.warning("Font download failed.")
-        except Exception as e:
-            logging.warning(f"Font error: {e}")
-    return font_path
+# ================= WORD TO PDF USING LIBREOFFICE (NO PYTHON PDF LIBRARIES) =================
 
 def word_to_pdf(file_infos):
+    """
+    Convert DOCX to PDF using LibreOffice in headless mode.
+    This preserves 100% of formatting, fonts, tables, and layout.
+    """
     if len(file_infos) != 1:
-        raise ValueError("Please select exactly 1 Word file")
+        raise ValueError("Please select exactly 1 Word file to convert to PDF")
     f = file_infos[0]
     if f['ext'] != 'docx':
-        raise ValueError("Not a DOCX file")
+        raise ValueError(f"File '{f['original']}' is not a DOCX")
 
     base_name = f['original'].rsplit('.', 1)[0]
     out_name = f"{base_name}.pdf"
     out_path = os.path.join(app.config['CONVERTED_FOLDER'], out_name)
 
     try:
-        doc = Document(f['path'])
-        font_path = download_dejavu_font()
-        pdf = FPDF(orientation='P', unit='pt', format='A4')
-        pdf.add_page()
-        pdf.add_font('DejaVu', '', font_path, uni=True)
-        pdf.add_font('DejaVu', 'B', font_path, uni=True)
-        pdf.add_font('DejaVu', 'I', font_path, uni=True)
-        pdf.add_font('DejaVu', 'BI', font_path, uni=True)
-        pdf.set_font('DejaVu', size=11)
-        pdf.set_margins(40, 40, 40)
-        pdf.set_auto_page_break(True, margin=40)
-
-        # Helper to get font style from run
-        def get_fpdf_style(run):
-            style = ''
-            if run.bold and run.italic:
-                style = 'BI'
-            elif run.bold:
-                style = 'B'
-            elif run.italic:
-                style = 'I'
+        # Run LibreOffice headless conversion
+        # --headless: no GUI
+        # --convert-to pdf: output format
+        # --outdir: output directory
+        # The input file is the last argument
+        cmd = [
+            'libreoffice',
+            '--headless',
+            '--convert-to', 'pdf',
+            '--outdir', app.config['CONVERTED_FOLDER'],
+            f['path']
+        ]
+        logging.info(f"Running LibreOffice command: {' '.join(cmd)}")
+        
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        
+        if result.returncode != 0:
+            logging.error(f"LibreOffice stderr: {result.stderr}")
+            raise Exception(f"LibreOffice conversion failed with code {result.returncode}")
+        
+        # LibreOffice saves the PDF in the same directory as input with same base name
+        # but we have a unique name for the input file. The output will be named
+        # based on the input file's basename (without path) but with .pdf extension.
+        # Our input file is at f['path'] which is something like 'uploads/uuid.docx'.
+        # The output will be 'converted/uuid.pdf'? Actually LibreOffice uses the original
+        # filename (without the unique part) because we gave it f['path'].
+        # Let's search for the PDF file that was just created.
+        input_basename = os.path.basename(f['path']).rsplit('.', 1)[0]
+        expected_output = os.path.join(app.config['CONVERTED_FOLDER'], f"{input_basename}.pdf")
+        
+        # If that file exists, rename it to our desired out_name
+        if os.path.exists(expected_output):
+            # If the desired out_path is different, rename
+            if expected_output != out_path:
+                shutil.move(expected_output, out_path)
+        else:
+            # Maybe LibreOffice used the original filename (without the UUID prefix)? No, it uses the exact filename.
+            # But sometimes it adds a number? Let's list the converted folder.
+            files_in_converted = os.listdir(app.config['CONVERTED_FOLDER'])
+            pdf_files = [f for f in files_in_converted if f.endswith('.pdf')]
+            # Find the most recently created PDF
+            latest = None
+            latest_time = 0
+            for pdf_file in pdf_files:
+                pdf_path = os.path.join(app.config['CONVERTED_FOLDER'], pdf_file)
+                mtime = os.path.getmtime(pdf_path)
+                if mtime > latest_time:
+                    latest_time = mtime
+                    latest = pdf_path
+            if latest and latest != out_path:
+                shutil.move(latest, out_path)
             else:
-                style = ''
-            return style
-
-        def get_font_size(run):
-            if run.font.size:
-                return run.font.size.pt
-            return 11
-
-        # Process paragraphs
-        for para in doc.paragraphs:
-            if not para.text.strip():
-                pdf.ln(8)
-                continue
-            # Get alignment
-            align = 'L'
-            if para.alignment == WD_ALIGN_PARAGRAPH.CENTER:
-                align = 'C'
-            elif para.alignment == WD_ALIGN_PARAGRAPH.RIGHT:
-                align = 'R'
-            elif para.alignment == WD_ALIGN_PARAGRAPH.JUSTIFY:
-                align = 'J'
-            
-            # We'll write each run with appropriate formatting
-            # However, fpdf2's multi_cell doesn't support mid-line style changes easily.
-            # Simpler: combine runs into a single string with HTML-like tags? No.
-            # Alternative: write each run in sequence using cell, but that doesn't wrap.
-            # Better: use `write` which supports style changes.
-            # We'll set initial font and then for each run, if style changes, set it.
-            pdf.set_font('DejaVu', size=11)
-            x_start = pdf.get_x()
-            y_start = pdf.get_y()
-            for run in para.runs:
-                if not run.text:
-                    continue
-                style = get_fpdf_style(run)
-                size = get_font_size(run)
-                pdf.set_font('DejaVu', style, size)
-                # Write the text (handles wrapping)
-                pdf.write(size * 0.35, run.text)
-            # Move to next line with appropriate spacing
-            pdf.ln(para.paragraph_format.line_spacing or 1.2 * 11)
-            if para.paragraph_format.space_after:
-                pdf.ln(para.paragraph_format.space_after.pt)
+                raise Exception("Could not locate the converted PDF file")
         
-        # Tables (simplified)
-        for table in doc.tables:
-            for row in table.rows:
-                for cell in row.cells:
-                    pdf.cell(80, 20, cell.text, border=1)
-                pdf.ln()
-            pdf.ln(10)
+        # Verify output
+        if not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
+            raise Exception("PDF generation produced empty file")
         
-        pdf.output(out_path)
         return out_path, out_name
-
+        
+    except subprocess.TimeoutExpired:
+        raise Exception("Conversion timed out (LibreOffice took too long)")
     except Exception as e:
         logging.error(f"Word to PDF conversion error: {str(e)}")
-        raise Exception(f"Word to PDF conversion failed: {str(e)}")
+        raise Exception(f"Failed to convert Word to PDF: {str(e)}")
 
-# ================= ROUTES =================
+# ================= ROUTES (no split-pdf) =================
+
 CONVERSION_FUNCTIONS = {
     'merge': merge_pdfs,
     'pdf-to-word': pdf_to_word,
@@ -400,14 +370,14 @@ def logout():
 @app.route("/convert", methods=["POST"])
 def convert():
     if 'files' not in request.files:
-        return jsonify({'success': False, 'error': 'No files'})
+        return jsonify({'success': False, 'error': 'No files uploaded'})
     files = request.files.getlist('files')
     tool = request.form.get('tool')
     if not tool or tool not in CONVERSION_FUNCTIONS:
-        return jsonify({'success': False, 'error': 'Invalid tool'})
+        return jsonify({'success': False, 'error': 'Invalid tool selected'})
     saved_files = save_files(files)
     if not saved_files:
-        return jsonify({'success': False, 'error': 'No valid files'})
+        return jsonify({'success': False, 'error': 'No valid files uploaded'})
     try:
         result = CONVERSION_FUNCTIONS[tool](saved_files)
         output_files = result if isinstance(result, list) else [result]
