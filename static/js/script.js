@@ -8,9 +8,6 @@ const progressContainer = document.getElementById("progressContainer");
 const progressBar = document.getElementById("progressBar");
 const loadingOverlay = document.getElementById("loadingOverlay");
 const successNotification = document.getElementById("successNotification");
-const toolOptions = document.getElementById("toolOptions");
-const splitStartPage = document.getElementById("splitStartPage");
-const splitEndPage = document.getElementById("splitEndPage");
 const toolCards = document.querySelectorAll(".tool-card");
 
 // Header scroll effect
@@ -29,7 +26,6 @@ hamburger.addEventListener("click", (e) => {
   navLinks.classList.toggle("open");
 });
 
-// Close mobile menu when clicking a link
 document.querySelectorAll(".header-nav a").forEach((link) => {
   link.addEventListener("click", () => {
     hamburger.classList.remove("active");
@@ -37,7 +33,6 @@ document.querySelectorAll(".header-nav a").forEach((link) => {
   });
 });
 
-// Close mobile menu when clicking outside
 document.addEventListener("click", (e) => {
   if (!header.contains(e.target) && navLinks.classList.contains("open")) {
     hamburger.classList.remove("active");
@@ -56,7 +51,6 @@ window.addEventListener("scroll", () => {
       current = section.getAttribute("id");
     }
   });
-
   document.querySelectorAll(".header-nav a").forEach((a) => {
     a.classList.remove("active");
     if (a.getAttribute("href") === `#${current}`) {
@@ -104,7 +98,6 @@ function handleDrop(e) {
   handleFiles({ target: { files } });
 }
 
-// Upload area click - only if not clicking the button
 uploadArea.addEventListener("click", (e) => {
   if (
     e.target.classList.contains("upload-btn") ||
@@ -115,7 +108,6 @@ uploadArea.addEventListener("click", (e) => {
   fileInput.click();
 });
 
-// Upload button click
 document.querySelector(".upload-btn").addEventListener("click", (e) => {
   e.stopPropagation();
   fileInput.click();
@@ -123,7 +115,7 @@ document.querySelector(".upload-btn").addEventListener("click", (e) => {
 
 fileInput.addEventListener("change", handleFiles);
 
-// Tool selection
+// Tool selection (no split-pdf anymore)
 let selectedTool = null;
 
 toolCards.forEach((card) => {
@@ -134,14 +126,6 @@ toolCards.forEach((card) => {
     selectedTool = tool;
     toolCards.forEach((c) => c.classList.remove("selected"));
     card.classList.add("selected");
-
-    if (tool === "split-pdf") {
-      toolOptions.style.display = "block";
-    } else {
-      toolOptions.style.display = "none";
-      if (splitStartPage) splitStartPage.value = "";
-      if (splitEndPage) splitEndPage.value = "";
-    }
 
     // Scroll to upload area
     uploadArea.scrollIntoView({ behavior: "smooth" });
@@ -170,26 +154,10 @@ function uploadFiles(files) {
   }
   formData.append("tool", selectedTool);
 
-  if (selectedTool === "split-pdf" && splitStartPage && splitEndPage) {
-    const start = splitStartPage.value.trim();
-    const end = splitEndPage.value.trim();
-    if (start && end && parseInt(start, 10) > parseInt(end, 10)) {
-      showNotification("Start page cannot be greater than end page", "error");
-      return;
-    }
-    if (start) {
-      formData.append("start_page", start);
-    }
-    if (end) {
-      formData.append("end_page", end);
-    }
-  }
-
   // Show loading
   loadingOverlay.style.display = "flex";
   progressContainer.style.display = "block";
 
-  // Simulate progress (for UX)
   let progress = 0;
   const interval = setInterval(() => {
     progress += Math.random() * 30;
@@ -251,7 +219,6 @@ function uploadFiles(files) {
     });
 }
 
-// Notification
 function showNotification(message, type = "success") {
   const notification = document.getElementById("successNotification");
   const icon = notification.querySelector("i");
@@ -273,7 +240,7 @@ function showNotification(message, type = "success") {
   }, 3000);
 }
 
-// Auth Modals
+// Auth Modals (unchanged from your original)
 const signupModal = document.getElementById("signup-modal");
 const loginModal = document.getElementById("login-modal");
 
@@ -310,7 +277,6 @@ document.getElementById("switch-signup").addEventListener("click", () => {
   signupModal.style.display = "flex";
 });
 
-// Show modal if error exists
 window.addEventListener("DOMContentLoaded", () => {
   if (document.querySelector(".modal-error")) {
     if (
@@ -326,7 +292,6 @@ window.addEventListener("DOMContentLoaded", () => {
   }
 });
 
-// Smooth scrolling
 document.querySelectorAll('a[href^="#"]').forEach((anchor) => {
   anchor.addEventListener("click", function (e) {
     e.preventDefault();
