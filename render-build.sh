@@ -13,8 +13,5 @@ apt-get update && apt-get install -y \
     libxml2-dev \
     libxslt1-dev
 
-# Upgrade pip
 pip install --upgrade pip
-
-# Install Python requirements
 pip install -r requirements.txt
