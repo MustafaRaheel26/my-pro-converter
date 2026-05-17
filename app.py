@@ -243,41 +243,32 @@ def compress_pdf(file_infos):
         out_path = os.path.join(app.config['CONVERTED_FOLDER'], out_name)
     return out_path, out_name
 
-# ================= WORD TO PDF (PROPER, USING WEASYPRINT + UNICODE FONT) =================
+# ================= WORD TO PDF USING WEASYPRINT (NO CONFLICTS) =================
 
 def get_dejavu_font():
-    """Download DejaVu Sans font (supports all Unicode) if not present."""
     font_dir = app.config['FONTS_FOLDER']
     font_path = os.path.join(font_dir, 'DejaVuSans.ttf')
     if not os.path.exists(font_path):
-        logging.info("Downloading DejaVu Sans font for PDF conversion...")
+        logging.info("Downloading DejaVu Sans font...")
         url = "https://github.com/dejavu-fonts/dejavu-fonts/raw/master/ttf/DejaVuSans.ttf"
         try:
             r = requests.get(url, timeout=30)
             if r.status_code == 200:
                 with open(font_path, 'wb') as f:
                     f.write(r.content)
-                logging.info("Font downloaded successfully.")
+                logging.info("Font downloaded.")
             else:
-                logging.warning("Could not download font, will rely on system fonts.")
+                logging.warning("Font download failed.")
         except Exception as e:
-            logging.warning(f"Font download failed: {e}")
+            logging.warning(f"Font error: {e}")
     return font_path
 
 def word_to_pdf(file_infos):
-    """
-    Convert DOCX to PDF preserving all formatting:
-    - Font sizes, colours, bold, italic, underline
-    - Paragraph alignment (left, center, right, justify)
-    - Headings (H1, H2, H3)
-    - Tables with borders and background
-    - All Unicode characters (curly quotes, emoji, etc.)
-    """
     if len(file_infos) != 1:
-        raise ValueError("Please select exactly 1 Word file to convert to PDF")
+        raise ValueError("Please select exactly 1 Word file")
     f = file_infos[0]
     if f['ext'] != 'docx':
-        raise ValueError(f"File '{f['original']}' is not a DOCX")
+        raise ValueError("Not a DOCX file")
 
     base_name = f['original'].rsplit('.', 1)[0]
     out_name = f"{base_name}.pdf"
@@ -288,38 +279,14 @@ def word_to_pdf(file_infos):
         html_parts = []
         font_path = get_dejavu_font()
 
-        # CSS with embedded DejaVu Sans font
         css_rules = f"""
-        @page {{
-            size: A4;
-            margin: 1.5cm;
-        }}
+        @page {{ size: A4; margin: 1.5cm; }}
         @font-face {{
-            font-family: 'DejaVu Sans';
+            font-family: 'DejaVu';
             src: url('{font_path}') format('truetype');
-            font-weight: normal;
-            font-style: normal;
-        }}
-        @font-face {{
-            font-family: 'DejaVu Sans';
-            src: url('{font_path}') format('truetype');
-            font-weight: bold;
-            font-style: normal;
-        }}
-        @font-face {{
-            font-family: 'DejaVu Sans';
-            src: url('{font_path}') format('truetype');
-            font-weight: normal;
-            font-style: italic;
-        }}
-        @font-face {{
-            font-family: 'DejaVu Sans';
-            src: url('{font_path}') format('truetype');
-            font-weight: bold;
-            font-style: italic;
         }}
         body {{
-            font-family: 'DejaVu Sans', 'Arial', 'Helvetica', sans-serif;
+            font-family: 'DejaVu', 'Arial', sans-serif;
             font-size: 11pt;
             margin: 0;
             padding: 0;
@@ -347,9 +314,7 @@ def word_to_pdf(file_infos):
             return "black"
 
         def get_size(run):
-            if run.font.size:
-                return run.font.size.pt
-            return 11
+            return run.font.size.pt if run.font.size else 11
 
         def get_align_class(para):
             if para.alignment:
@@ -361,12 +326,10 @@ def word_to_pdf(file_infos):
                     return 'align-justify'
             return 'align-left'
 
-        # Process paragraphs
         for para in doc.paragraphs:
-            if not para.text.strip() and len(para.runs) == 0:
-                html_parts.append('<p style="margin:0 0 6pt">&nbsp;</p>')
+            if not para.text.strip() and not para.runs:
+                html_parts.append('<p>&nbsp;</p>')
                 continue
-
             style_name = para.style.name.lower() if para.style else ''
             if 'heading 1' in style_name or 'title' in style_name:
                 tag = 'h1'
@@ -376,38 +339,31 @@ def word_to_pdf(file_infos):
                 tag = 'h3'
             else:
                 tag = 'p'
-
             align_class = get_align_class(para)
             html_parts.append(f'<{tag} class="{align_class}">')
-
             for run in para.runs:
                 if not run.text:
                     continue
                 text = escape(run.text)
-                style_css = []
+                styles = []
                 if run.bold:
-                    style_css.append("font-weight: bold")
+                    styles.append('font-weight: bold')
                 if run.italic:
-                    style_css.append("font-style: italic")
+                    styles.append('font-style: italic')
                 if run.underline:
-                    style_css.append("text-decoration: underline")
+                    styles.append('text-decoration: underline')
                 size = get_size(run)
                 if size != 11:
-                    style_css.append(f"font-size: {size}pt")
+                    styles.append(f'font-size: {size}pt')
                 color = get_color(run)
-                if color != "black":
-                    style_css.append(f"color: {color}")
-                if run.font.name:
-                    style_css.append(f"font-family: '{run.font.name}', 'DejaVu Sans', sans-serif")
-
-                if style_css:
-                    html_parts.append(f'<span style="{"; ".join(style_css)}">{text}</span>')
+                if color != 'black':
+                    styles.append(f'color: {color}')
+                if styles:
+                    html_parts.append(f'<span style="{"; ".join(styles)}">{text}</span>')
                 else:
                     html_parts.append(text)
-
             html_parts.append(f'</{tag}>')
 
-        # Process tables
         for table in doc.tables:
             html_parts.append('<table>')
             for i, row in enumerate(table.rows):
@@ -420,37 +376,23 @@ def word_to_pdf(file_infos):
                             cell_html.append(f'<p style="margin:0">{escape(para.text)}</p>')
                     html_parts.append(f'<{tag}>{"".join(cell_html)}</{tag}>')
                 html_parts.append('</tr>')
-            html_parts.append('</table>')
+            html_parts.append('<table>')
 
         full_html = f"""<!DOCTYPE html>
         <html>
-        <head>
-            <meta charset="UTF-8">
-            <style>{css_rules}</style>
-        </head>
-        <body>
-            {''.join(html_parts)}
-        </body>
+        <head><meta charset="UTF-8"><style>{css_rules}</style></head>
+        <body>{"".join(html_parts)}</body>
         </html>"""
 
-        # Generate PDF using WeasyPrint
         font_config = FontConfiguration()
-        HTML(string=full_html, base_url="").write_pdf(
-            out_path,
-            font_config=font_config,
-            presentational_hints=True
-        )
-
-        if not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
-            raise Exception("PDF generation produced empty file")
-
+        HTML(string=full_html).write_pdf(out_path, font_config=font_config)
         return out_path, out_name
 
     except Exception as e:
-        logging.error(f"Word to PDF conversion error: {str(e)}")
-        raise Exception(f"Failed to convert Word to PDF: {str(e)}")
+        logging.error(f"Word to PDF error: {str(e)}")
+        raise Exception(f"Word to PDF conversion failed: {str(e)}")
 
-# ================= ROUTES (Split PDF removed) =================
+# ================= ROUTES (no split-pdf) =================
 
 CONVERSION_FUNCTIONS = {
     'merge': merge_pdfs,
@@ -477,13 +419,12 @@ def auth():
         c = conn.cursor()
         if auth_type == "signup":
             try:
-                c.execute("INSERT INTO users (username, email, password) VALUES (?,?,?)",
-                         (username, email, password))
+                c.execute("INSERT INTO users (username, email, password) VALUES (?,?,?)", (username, email, password))
                 conn.commit()
                 session["user"] = username
                 return redirect("/")
             except sqlite3.IntegrityError:
-                return render_template("index.html", signup_error="Username already exists!", user=None)
+                return render_template("index.html", signup_error="Username exists", user=None)
         else:
             c.execute("SELECT * FROM users WHERE username=? AND password=?", (username, password))
             user = c.fetchone()
@@ -491,7 +432,7 @@ def auth():
                 session["user"] = username
                 return redirect("/")
             else:
-                return render_template("index.html", login_error="Invalid username or password", user=None)
+                return render_template("index.html", login_error="Invalid credentials", user=None)
 
 @app.route("/logout")
 def logout():
@@ -501,17 +442,16 @@ def logout():
 @app.route("/convert", methods=["POST"])
 def convert():
     if 'files' not in request.files:
-        return jsonify({'success': False, 'error': 'No files uploaded'})
+        return jsonify({'success': False, 'error': 'No files'})
     files = request.files.getlist('files')
     tool = request.form.get('tool')
     if not tool or tool not in CONVERSION_FUNCTIONS:
-        return jsonify({'success': False, 'error': 'Invalid tool selected'})
+        return jsonify({'success': False, 'error': 'Invalid tool'})
     saved_files = save_files(files)
     if not saved_files:
-        return jsonify({'success': False, 'error': 'No valid files uploaded'})
+        return jsonify({'success': False, 'error': 'No valid files'})
     try:
-        func = CONVERSION_FUNCTIONS[tool]
-        result = func(saved_files)
+        result = CONVERSION_FUNCTIONS[tool](saved_files)
         output_files = result if isinstance(result, list) else [result]
         if 'user' in session:
             with get_db() as conn:
@@ -525,9 +465,8 @@ def convert():
                                   (user_id, tool, saved_files[0]['original'], out_name))
                     conn.commit()
         if len(output_files) == 1:
-            out_path, out_name = output_files[0]
-            return jsonify({'success': True, 'download_url': f'/download/{out_name}', 'filename': out_name})
-        return jsonify({'success': True, 'filenames': [out_name for _, out_name in output_files], 'download_urls': [f'/download/{out_name}' for _, out_name in output_files]})
+            return jsonify({'success': True, 'download_url': f'/download/{output_files[0][1]}', 'filename': output_files[0][1]})
+        return jsonify({'success': True, 'filenames': [n for _, n in output_files], 'download_urls': [f'/download/{n}' for _, n in output_files]})
     except Exception as e:
         logging.error(f"Conversion error: {str(e)}")
         return jsonify({'success': False, 'error': str(e)})
@@ -545,7 +484,7 @@ def history():
         return redirect("/")
     with get_db() as conn:
         c = conn.cursor()
-        c.execute("""SELECT tool, original_filename, converted_filename, created_at FROM conversions WHERE user_id = (SELECT id FROM users WHERE username=?) ORDER BY created_at DESC""", (session['user'],))
+        c.execute("SELECT tool, original_filename, converted_filename, created_at FROM conversions WHERE user_id = (SELECT id FROM users WHERE username=?) ORDER BY created_at DESC", (session['user'],))
         rows = c.fetchall()
     return render_template("history.html", history=rows, user=session['user'])
 
