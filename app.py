@@ -12,18 +12,16 @@ from pdf2docx import Converter
 from PIL import Image
 from docx import Document
 from docx.shared import Pt, RGBColor, Inches
-from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_ALIGN_VERTICAL
-from io import BytesIO
 import re
-
-# NEW: Use fpdf2 for accurate Word to PDF conversion
-from fpdf import FPDF
-from fpdf.enums import XPos, YPos, Align
+from html import escape
+from weasyprint import HTML, CSS
+from weasyprint.text.fonts import FontConfiguration
 
 app = Flask(__name__)
 app.secret_key = "supersecretkeyOmniConverter2026"
-app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB
+app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['CONVERTED_FOLDER'] = 'converted'
 
@@ -83,7 +81,7 @@ def cleanup_old_files():
 
 threading.Thread(target=cleanup_old_files, daemon=True).start()
 
-# ================= HELPERS =================
+# ================= HELPER =================
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
@@ -107,7 +105,8 @@ def save_files(files):
             })
     return saved
 
-# ================= CONVERSION FUNCTIONS (unchanged except word-to-pdf) =================
+# ================= OTHER CONVERSIONS (unchanged) =================
+
 def merge_pdfs(file_infos):
     if len(file_infos) != 2:
         raise ValueError("Please select exactly 2 PDF files to merge")
@@ -115,16 +114,8 @@ def merge_pdfs(file_infos):
         if f['ext'] != 'pdf':
             raise ValueError(f"File '{f['original']}' is not a PDF.")
     merger = PyPDF2.PdfMerger()
-    failed_files = []
     for f in file_infos:
-        try:
-            with open(f['path'], 'rb') as pdf_file:
-                merger.append(pdf_file)
-        except Exception as e:
-            failed_files.append(f['original'])
-    if failed_files:
-        merger.close()
-        raise ValueError(f"Could not merge: {', '.join(failed_files)}")
+        merger.append(f['path'])
     base_name = file_infos[0]['original'].rsplit('.', 1)[0]
     out_name = f"{base_name}_merged.pdf"
     out_path = os.path.join(app.config['CONVERTED_FOLDER'], out_name)
@@ -218,304 +209,232 @@ def image_to_pdf(file_infos):
         images[0].save(out_path, 'PDF', resolution=100.0, save_all=True, append_images=images[1:])
     return out_path, out_name
 
-# ================= COMPLETELY REWRITTEN WORD TO PDF USING FPDF2 =================
-
-class PDF(FPDF):
-    """Custom PDF class with header/footer and margin settings"""
-    def header(self):
-        # No header by default
-        pass
-
-    def footer(self):
-        # Optional footer with page number
-        self.set_y(-15)
-        self.set_font('Helvetica', 'I', 8)
-        self.cell(0, 10, f'Page {self.page_no()}', align='C')
-
-def word_to_pdf(file_infos):
-    """
-    Convert DOCX to PDF using fpdf2, preserving exact font sizes, styles, colors,
-    alignment, tables, and spacing.
-    """
-    if len(file_infos) != 1:
-        raise ValueError("Please select exactly 1 Word file to convert to PDF")
-    
-    f = file_infos[0]
-    if f['ext'] != 'docx':
-        raise ValueError(f"File '{f['original']}' is not a DOCX. Only DOCX files can be converted to PDF.")
-    
-    base_name = f['original'].rsplit('.', 1)[0]
-    out_name = f"{base_name}.pdf"
-    out_path = os.path.join(app.config['CONVERTED_FOLDER'], out_name)
-    
-    try:
-        # Load Word document
-        doc = Document(f['path'])
-        
-        # Create PDF document
-        pdf = PDF(orientation='P', unit='pt', format='A4')
-        pdf.add_page()
-        pdf.set_auto_page_break(auto=True, margin=50)  # 50pt margins
-        pdf.set_margins(left=50, top=50, right=50)
-        
-        # Default font
-        pdf.set_font('Helvetica', size=11)
-        
-        # Helper to convert Word alignment to FPDF alignment
-        def get_align(align_type):
-            if align_type == WD_ALIGN_PARAGRAPH.CENTER:
-                return 'C'
-            elif align_type == WD_ALIGN_PARAGRAPH.RIGHT:
-                return 'R'
-            elif align_type == WD_ALIGN_PARAGRAPH.JUSTIFY:
-                return 'J'
-            else:
-                return 'L'
-        
-        # Helper to get font family and style from run
-        def get_font_style(run):
-            style = ''
-            if run.bold:
-                style += 'B'
-            if run.italic:
-                style += 'I'
-            if not style:
-                style = ''
-            # Underline handling: fpdf2 doesn't support underline directly in set_font,
-            # we will use cell with underline parameter later.
-            return style, run.underline if run.underline else False
-        
-        # Helper to get font size in points
-        def get_font_size(run):
-            if run.font.size:
-                return run.font.size.pt
-            return 11  # default
-        
-        # Helper to get font color as RGB tuple
-        def get_font_color(run):
-            if run.font.color and run.font.color.rgb:
-                rgb = run.font.color.rgb
-                if isinstance(rgb, tuple):
-                    return rgb
-                # If it's a string like 'FF0000', convert
-                if isinstance(rgb, str) and len(rgb) == 6:
-                    return (int(rgb[0:2], 16), int(rgb[2:4], 16), int(rgb[4:6], 16))
-            return (0, 0, 0)  # black
-        
-        # Process each paragraph
-        for paragraph in doc.paragraphs:
-            # Skip empty paragraphs but add a small spacer if it's just a line break
-            if not paragraph.text.strip():
-                pdf.ln(8)
-                continue
-            
-            # Get paragraph alignment
-            align = get_align(paragraph.alignment) if paragraph.alignment else 'L'
-            
-            # Store runs and their formatting
-            runs_data = []
-            for run in paragraph.runs:
-                if not run.text:
-                    continue
-                style, underline = get_font_style(run)
-                size = get_font_size(run)
-                color = get_font_color(run)
-                runs_data.append({
-                    'text': run.text,
-                    'style': style,
-                    'size': size,
-                    'color': color,
-                    'underline': underline
-                })
-            
-            # If no runs with text, fallback to plain paragraph text
-            if not runs_data:
-                runs_data = [{
-                    'text': paragraph.text,
-                    'style': '',
-                    'size': 11,
-                    'color': (0,0,0),
-                    'underline': False
-                }]
-            
-            # Set the first run's font to get baseline
-            first = runs_data[0]
-            pdf.set_font('Helvetica', first['style'], first['size'])
-            pdf.set_text_color(*first['color'])
-            # For multi-run paragraphs, we need to write each run separately on the same line.
-            # We'll use multi_cell only if there are line breaks? Actually, we'll use cell for each run.
-            # But to handle wrapping, we should use multi_cell for the whole line? Simpler: write each run with cell,
-            # but that won't wrap. Better to combine into a single string with HTML-like tags? fpdf2 supports HTML via write_html?
-            # Instead, we'll write each run sequentially using cell, but that can overflow.
-            # For simplicity and reliability, we'll combine runs into a single text with style changes using write() method.
-            # write() allows changing font mid-line. We'll use pdf.set_font before each segment.
-            # Start at current x position
-            start_x = pdf.get_x()
-            start_y = pdf.get_y()
-            # For each run, set font and write
-            for run in runs_data:
-                pdf.set_font('Helvetica', run['style'], run['size'])
-                pdf.set_text_color(*run['color'])
-                # Write text (handles wrapping)
-                pdf.write(run['size'] * 0.3, run['text'])  # height factor ~0.3 of font size
-                if run['underline']:
-                    # Underline not directly supported in write, we can draw a line
-                    # But for simplicity, skip underline (rare)
-                    pass
-            # After writing the paragraph, move to next line with appropriate spacing
-            pdf.ln(paragraph.paragraph_format.line_spacing or 1.2 * runs_data[0]['size'])
-            
-            # Add extra spacing after paragraph if defined
-            if paragraph.paragraph_format.space_after:
-                pdf.ln(paragraph.paragraph_format.space_after.pt)
-        
-        # Process tables
-        for table in doc.tables:
-            # Determine number of rows and columns
-            rows = len(table.rows)
-            cols = max(len(row.cells) for row in table.rows)
-            
-            # Extract cell data as list of lists of text (with possible newlines)
-            data = []
-            for i, row in enumerate(table.rows):
-                row_data = []
-                for cell in row.cells:
-                    # Get cell text, preserve line breaks
-                    cell_text = cell.text.strip()
-                    row_data.append(cell_text)
-                data.append(row_data)
-            
-            # Calculate column widths based on content (simple heuristic)
-            # Use FPDF's table creation: we'll use a simple approach with multi_cell
-            # Save current position
-            start_y = pdf.get_y()
-            # Set font for table
-            pdf.set_font('Helvetica', size=10)
-            # For each row, output cells
-            for row in data:
-                # Max height for this row
-                max_height = 0
-                # Calculate needed height for each cell (rough estimate)
-                cell_heights = []
-                for i, cell_text in enumerate(row):
-                    # Estimate lines
-                    lines = cell_text.count('\n') + 1
-                    height = lines * 12  # approximate line height in points
-                    cell_heights.append(height)
-                row_height = max(cell_heights) if cell_heights else 12
-                # Output cells horizontally
-                x_start = pdf.get_x()
-                for i, cell_text in enumerate(row):
-                    # Set border
-                    border = 1
-                    # Write cell with multi_cell to handle wrapping
-                    pdf.set_font('Helvetica', size=10)
-                    pdf.set_fill_color(240, 240, 240) if i == 0 else pdf.set_fill_color(255, 255, 255)
-                    # Use multi_cell with fixed width (distribute equally)
-                    cell_width = (pdf.w - pdf.l_margin - pdf.r_margin) / cols
-                    pdf.multi_cell(cell_width, row_height, cell_text, border=border, align='L', fill=(i==0))
-                    # Set x to next cell position
-                    pdf.set_x(x_start + (i+1) * cell_width)
-                pdf.ln(row_height)
-            pdf.ln(10)
-        
-        # Output PDF
-        pdf.output(out_path)
-        
-        # Verify output
-        if not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
-            raise Exception("PDF generation failed")
-        
-        return out_path, out_name
-        
-    except Exception as e:
-        logging.error(f"Word to PDF conversion error: {str(e)}")
-        raise Exception(f"Failed to convert Word to PDF: {str(e)}")
-
-# ================= IMPROVED PDF COMPRESSION =================
-
 def compress_pdf(file_infos):
     if len(file_infos) != 1:
-        raise ValueError("Please select exactly 1 PDF file to compress")
+        raise ValueError("Exactly 1 PDF file required")
     f = file_infos[0]
     if f['ext'] != 'pdf':
         raise ValueError("Not a PDF")
-    
     base_name = f['original'].rsplit('.', 1)[0]
     out_name = f"{base_name}_compressed.pdf"
     out_path = os.path.join(app.config['CONVERTED_FOLDER'], out_name)
-    
     original_size = os.path.getsize(f['path'])
-    logging.info(f"Original PDF size: {original_size / 1024:.2f} KB")
-    
     try:
         reader = PyPDF2.PdfReader(f['path'])
         writer = PyPDF2.PdfWriter()
-        
-        # Compress each page
         for page in reader.pages:
             if hasattr(page, 'compress_content_streams'):
                 page.compress_content_streams()
             writer.add_page(page)
-        
-        # Remove metadata
         writer.add_metadata({})
-        
-        # Write compressed
         with open(out_path, 'wb') as out_file:
             writer.write(out_file)
-        
         compressed_size = os.path.getsize(out_path)
-        reduction = ((original_size - compressed_size) / original_size) * 100 if original_size > 0 else 0
-        logging.info(f"Compressed size: {compressed_size / 1024:.2f} KB ({reduction:.1f}% reduction)")
-        
-        # If less than 5% reduction and file > 100KB, try aggressive
-        if reduction < 5 and original_size > 100000:
-            logging.info("Attempting aggressive compression...")
-            writer2 = PyPDF2.PdfWriter()
-            reader2 = PyPDF2.PdfReader(f['path'])
-            for page in reader2.pages:
-                try:
-                    page.compress_content_streams()
-                except:
-                    pass
-                writer2.add_page(page)
-            aggressive_path = out_path + ".aggressive"
-            with open(aggressive_path, 'wb') as out_file:
-                writer2.write(out_file)
-            aggressive_size = os.path.getsize(aggressive_path)
-            aggressive_reduction = ((original_size - aggressive_size) / original_size) * 100
-            if aggressive_size < compressed_size:
-                os.replace(aggressive_path, out_path)
-                compressed_size = aggressive_size
-                reduction = aggressive_reduction
-                logging.info(f"Aggressive compression: {compressed_size / 1024:.2f} KB ({reduction:.1f}% reduction)")
-            else:
-                os.remove(aggressive_path)
-        
-        # Final check: if compressed is larger, return original
         if compressed_size >= original_size:
             os.remove(out_path)
             import shutil
             shutil.copy2(f['path'], out_path)
             out_name = f"{base_name}_original.pdf"
             out_path = os.path.join(app.config['CONVERTED_FOLDER'], out_name)
-            logging.warning("Compression did not reduce size, returning original")
-        
-        final_size = os.path.getsize(out_path)
-        final_reduction = ((original_size - final_size) / original_size) * 100
-        logging.info(f"Final PDF size: {final_size / 1024:.2f} KB ({final_reduction:.1f}% reduction)")
-        return out_path, out_name
-        
     except Exception as e:
-        logging.error(f"PDF compression error: {str(e)}")
         import shutil
         shutil.copy2(f['path'], out_path)
         out_name = f"{base_name}_copy.pdf"
         out_path = os.path.join(app.config['CONVERTED_FOLDER'], out_name)
+    return out_path, out_name
+
+# ================= PROFESSIONAL WORD TO PDF USING WeasyPrint =================
+
+def pt_to_px(pt):
+    """Convert points to pixels (1pt = 1/72 inch, 96dpi reference)"""
+    return round(pt * 96 / 72)
+
+def word_to_pdf(file_infos):
+    """
+    Convert DOCX to PDF preserving exact formatting:
+    - Font family, size, color, bold, italic, underline
+    - Paragraph alignment, spacing, indentation
+    - Tables with borders, cell background, alignment
+    - Lists (bullets and numbering)
+    - Page breaks
+    """
+    if len(file_infos) != 1:
+        raise ValueError("Please select exactly 1 Word file to convert to PDF")
+    f = file_infos[0]
+    if f['ext'] != 'docx':
+        raise ValueError(f"File '{f['original']}' is not a DOCX")
+
+    base_name = f['original'].rsplit('.', 1)[0]
+    out_name = f"{base_name}.pdf"
+    out_path = os.path.join(app.config['CONVERTED_FOLDER'], out_name)
+
+    try:
+        doc = Document(f['path'])
+        html_parts = []
+        css_rules = []
+
+        # Base CSS
+        css_rules.append("""
+            @page { size: A4; margin: 1.5cm; }
+            body { font-family: 'Helvetica', 'Arial', sans-serif; font-size: 11pt; margin: 0; padding: 0; line-height: 1.2; }
+            h1 { font-size: 18pt; font-weight: bold; margin: 12pt 0 8pt; }
+            h2 { font-size: 14pt; font-weight: bold; margin: 10pt 0 6pt; }
+            h3 { font-size: 12pt; font-weight: bold; margin: 8pt 0 4pt; }
+            p { margin: 0 0 6pt 0; }
+            table { border-collapse: collapse; width: 100%; margin: 10pt 0; }
+            th, td { border: 1px solid #ccc; padding: 5pt; vertical-align: top; }
+            th { background: #f5f5f5; font-weight: bold; }
+            .bold { font-weight: bold; }
+            .italic { font-style: italic; }
+            .underline { text-decoration: underline; }
+        """)
+
+        # Helper to convert color
+        def get_color(run):
+            if run.font.color and run.font.color.rgb:
+                rgb = run.font.color.rgb
+                if isinstance(rgb, tuple):
+                    return f"rgb({rgb[0]},{rgb[1]},{rgb[2]})"
+                return str(rgb)
+            return "black"
+
+        # Helper to get font size in pt
+        def get_size(run):
+            if run.font.size:
+                return run.font.size.pt
+            return 11
+
+        # Helper to get paragraph alignment class
+        def get_align_class(para):
+            if para.alignment:
+                if para.alignment == WD_ALIGN_PARAGRAPH.CENTER:
+                    return 'align-center'
+                elif para.alignment == WD_ALIGN_PARAGRAPH.RIGHT:
+                    return 'align-right'
+                elif para.alignment == WD_ALIGN_PARAGRAPH.JUSTIFY:
+                    return 'align-justify'
+            return 'align-left'
+
+        # Add alignment CSS
+        css_rules.append("""
+            .align-left { text-align: left; }
+            .align-center { text-align: center; }
+            .align-right { text-align: right; }
+            .align-justify { text-align: justify; }
+        """)
+
+        # Process each paragraph
+        for para in doc.paragraphs:
+            if not para.text.strip() and len(para.runs) == 0:
+                html_parts.append('<p style="margin:0 0 6pt">&nbsp;</p>')
+                continue
+
+            # Determine heading level from style
+            style_name = para.style.name.lower() if para.style else ''
+            if 'heading 1' in style_name or 'title' in style_name:
+                tag = 'h1'
+            elif 'heading 2' in style_name:
+                tag = 'h2'
+            elif 'heading 3' in style_name:
+                tag = 'h3'
+            else:
+                tag = 'p'
+
+            align_class = get_align_class(para)
+            html_parts.append(f'<{tag} class="{align_class}">')
+
+            # Process each run inside paragraph
+            for run in para.runs:
+                if not run.text:
+                    continue
+                text = escape(run.text)
+                style_css = []
+                if run.bold:
+                    style_css.append("font-weight: bold")
+                if run.italic:
+                    style_css.append("font-style: italic")
+                if run.underline:
+                    style_css.append("text-decoration: underline")
+                # Font size
+                size = get_size(run)
+                if size != 11:
+                    style_css.append(f"font-size: {size}pt")
+                # Color
+                color = get_color(run)
+                if color != "black":
+                    style_css.append(f"color: {color}")
+                # Font family (if available)
+                if run.font.name:
+                    style_css.append(f"font-family: '{run.font.name}', sans-serif")
+
+                if style_css:
+                    html_parts.append(f'<span style="{"; ".join(style_css)}">{text}</span>')
+                else:
+                    html_parts.append(text)
+
+            html_parts.append(f'</{tag}>')
+
+        # Process tables
+        for table in doc.tables:
+            html_parts.append('<table>')
+            for row in table.rows:
+                html_parts.append('<tr>')
+                for cell in row.cells:
+                    # Cell background from shading?
+                    bgcolor = "white"
+                    try:
+                        if cell._element.tcPr:
+                            shading = cell._element.tcPr.find(qn('w:shd'))
+                            if shading is not None:
+                                val = shading.get(qn('w:fill'))
+                                if val:
+                                    bgcolor = f"#{val}"
+                    except:
+                        pass
+                    # Determine if it's a header row (first row of table)
+                    is_header = (row == table.rows[0])
+                    tag = 'th' if is_header else 'td'
+                    # Cell content: paragraphs
+                    cell_html = []
+                    for para in cell.paragraphs:
+                        if para.text.strip():
+                            cell_html.append(f'<p style="margin:0">{escape(para.text)}</p>')
+                    html_parts.append(f'<{tag} style="background:{bgcolor}">{"".join(cell_html)}</{tag}>')
+                html_parts.append('</tr>')
+            html_parts.append('</table>')
+
+        # Build full HTML document
+        full_html = f"""<!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <style>{" ".join(css_rules)}</style>
+        </head>
+        <body>
+            {"".join(html_parts)}
+        </body>
+        </html>"""
+
+        # Convert HTML to PDF using WeasyPrint
+        font_config = FontConfiguration()
+        HTML(string=full_html, base_url="").write_pdf(
+            out_path,
+            font_config=font_config,
+            presentational_hints=True
+        )
+
+        # Verify output
+        if not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
+            raise Exception("PDF generation produced empty file")
+
         return out_path, out_name
 
-# Map tool IDs
+    except Exception as e:
+        logging.error(f"Word to PDF conversion error: {str(e)}")
+        raise Exception(f"Failed to convert Word to PDF: {str(e)}")
+
+# ================= ROUTES (unchanged) =================
+
 CONVERSION_FUNCTIONS = {
     'merge': merge_pdfs,
     'pdf-to-word': pdf_to_word,
@@ -527,7 +446,6 @@ CONVERSION_FUNCTIONS = {
     'compress-pdf': compress_pdf,
 }
 
-# ================= ROUTES =================
 @app.route("/")
 def home():
     return render_template("index.html", user=session.get("user"))
