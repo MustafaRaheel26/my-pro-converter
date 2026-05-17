@@ -11,12 +11,13 @@ import PyPDF2
 from pdf2docx import Converter
 from PIL import Image
 from docx import Document
-from docx.shared import Pt
+from docx.shared import Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from html import escape
+from docx.enum.table import WD_ALIGN_VERTICAL
 import requests
-from weasyprint import HTML
-from weasyprint.text.fonts import FontConfiguration
+import tempfile
+from fpdf import FPDF
+from fpdf.enums import XPos, YPos, Align
 
 app = Flask(__name__)
 app.secret_key = "supersecretkeyOmniConverter2026"
@@ -32,7 +33,6 @@ logging.basicConfig(level=logging.INFO)
 
 ALLOWED_EXTENSIONS = {'pdf', 'png', 'jpg', 'jpeg', 'docx', 'xlsx', 'pptx', 'txt'}
 
-# ================= DATABASE =================
 DATABASE = 'users.db'
 
 @contextmanager
@@ -65,7 +65,6 @@ def init_db():
 
 init_db()
 
-# ================= CLEANUP =================
 def cleanup_old_files():
     while True:
         time.sleep(3600)
@@ -81,7 +80,6 @@ def cleanup_old_files():
 
 threading.Thread(target=cleanup_old_files, daemon=True).start()
 
-# ================= HELPERS =================
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
@@ -105,14 +103,13 @@ def save_files(files):
             })
     return saved
 
-# ================= OTHER CONVERSIONS (unchanged) =================
-
+# ================= OTHER CONVERSION FUNCTIONS (unchanged) =================
 def merge_pdfs(file_infos):
     if len(file_infos) != 2:
-        raise ValueError("Please select exactly 2 PDF files to merge")
+        raise ValueError("Select exactly 2 PDF files")
     for f in file_infos:
         if f['ext'] != 'pdf':
-            raise ValueError(f"File '{f['original']}' is not a PDF.")
+            raise ValueError("Not PDF")
     merger = PyPDF2.PdfMerger()
     for f in file_infos:
         merger.append(f['path'])
@@ -125,10 +122,10 @@ def merge_pdfs(file_infos):
 
 def pdf_to_word(file_infos):
     if len(file_infos) != 1:
-        raise ValueError("Please select exactly 1 PDF file")
+        raise ValueError("Exactly 1 PDF")
     f = file_infos[0]
     if f['ext'] != 'pdf':
-        raise ValueError("Not a PDF")
+        raise ValueError("Not PDF")
     base_name = f['original'].rsplit('.', 1)[0]
     out_name = f"{base_name}.docx"
     out_path = os.path.join(app.config['CONVERTED_FOLDER'], out_name)
@@ -139,16 +136,16 @@ def pdf_to_word(file_infos):
 
 def png_to_jpg(file_infos):
     if len(file_infos) != 1:
-        raise ValueError("Exactly 1 PNG file required")
+        raise ValueError("Exactly 1 PNG")
     f = file_infos[0]
     if f['ext'] != 'png':
-        raise ValueError("Not a PNG")
+        raise ValueError("Not PNG")
     base_name = f['original'].rsplit('.', 1)[0]
     out_name = f"{base_name}.jpg"
     out_path = os.path.join(app.config['CONVERTED_FOLDER'], out_name)
     image = Image.open(f['path'])
     if image.mode in ('RGBA', 'LA'):
-        rgb = Image.new('RGB', image.size, (255, 255, 255))
+        rgb = Image.new('RGB', image.size, (255,255,255))
         rgb.paste(image, mask=image.split()[-1])
         rgb.save(out_path, 'JPEG', quality=95)
     else:
@@ -157,11 +154,11 @@ def png_to_jpg(file_infos):
 
 def jpg_to_png(file_infos):
     if len(file_infos) != 1:
-        raise ValueError("Exactly 1 JPG file required")
+        raise ValueError("Exactly 1 JPG")
     f = file_infos[0]
-    if f['ext'] not in ['jpg', 'jpeg']:
-        raise ValueError("Not a JPG")
-    base_name = f['original'].rsplit('.', 1)[0]
+    if f['ext'] not in ['jpg','jpeg']:
+        raise ValueError("Not JPG")
+    base_name = f['original'].rsplit('.',1)[0]
     out_name = f"{base_name}.png"
     out_path = os.path.join(app.config['CONVERTED_FOLDER'], out_name)
     Image.open(f['path']).save(out_path, 'PNG')
@@ -169,24 +166,24 @@ def jpg_to_png(file_infos):
 
 def compress_image(file_infos):
     if len(file_infos) != 1:
-        raise ValueError("Exactly 1 image file required")
+        raise ValueError("Exactly 1 image")
     f = file_infos[0]
-    if f['ext'] not in ['jpg', 'jpeg', 'png']:
-        raise ValueError("Unsupported image")
-    base_name = f['original'].rsplit('.', 1)[0]
+    if f['ext'] not in ['jpg','jpeg','png']:
+        raise ValueError("Unsupported")
+    base_name = f['original'].rsplit('.',1)[0]
     out_name = f"{base_name}_compressed.{f['ext']}"
     out_path = os.path.join(app.config['CONVERTED_FOLDER'], out_name)
     image = Image.open(f['path'])
-    if f['ext'] in ['jpg', 'jpeg'] and image.mode in ('RGBA', 'LA', 'P'):
+    if f['ext'] in ['jpg','jpeg'] and image.mode in ('RGBA','LA','P'):
         image = image.convert('RGB')
     max_size = 1280
     if max(image.width, image.height) > max_size:
-        ratio = max_size / float(max(image.width, image.height))
-        new_size = (int(image.width * ratio), int(image.height * ratio))
+        ratio = max_size / max(image.width, image.height)
+        new_size = (int(image.width*ratio), int(image.height*ratio))
         image = image.resize(new_size, Image.Resampling.LANCZOS)
-    if image.mode not in ('RGB', 'L'):
+    if image.mode not in ('RGB','L'):
         image = image.convert('RGB')
-    if f['ext'] in ['jpg', 'jpeg']:
+    if f['ext'] in ['jpg','jpeg']:
         image.save(out_path, 'JPEG', optimize=True, quality=30, progressive=True)
     else:
         image = image.convert('P', palette=Image.Palette.ADAPTIVE, colors=256)
@@ -195,12 +192,12 @@ def compress_image(file_infos):
 
 def image_to_pdf(file_infos):
     if len(file_infos) < 1:
-        raise ValueError("At least 1 image required")
+        raise ValueError("At least 1 image")
     for f in file_infos:
-        if f['ext'] not in ['jpg', 'jpeg', 'png']:
-            raise ValueError("Unsupported image")
+        if f['ext'] not in ['jpg','jpeg','png']:
+            raise ValueError("Unsupported")
     images = [Image.open(f['path']).convert('RGB') for f in file_infos]
-    base_name = file_infos[0]['original'].rsplit('.', 1)[0]
+    base_name = file_infos[0]['original'].rsplit('.',1)[0]
     out_name = f"{base_name}.pdf"
     out_path = os.path.join(app.config['CONVERTED_FOLDER'], out_name)
     if len(images) == 1:
@@ -211,11 +208,11 @@ def image_to_pdf(file_infos):
 
 def compress_pdf(file_infos):
     if len(file_infos) != 1:
-        raise ValueError("Exactly 1 PDF file required")
+        raise ValueError("Exactly 1 PDF")
     f = file_infos[0]
     if f['ext'] != 'pdf':
-        raise ValueError("Not a PDF")
-    base_name = f['original'].rsplit('.', 1)[0]
+        raise ValueError("Not PDF")
+    base_name = f['original'].rsplit('.',1)[0]
     out_name = f"{base_name}_compressed.pdf"
     out_path = os.path.join(app.config['CONVERTED_FOLDER'], out_name)
     original_size = os.path.getsize(f['path'])
@@ -229,23 +226,21 @@ def compress_pdf(file_infos):
         writer.add_metadata({})
         with open(out_path, 'wb') as out_file:
             writer.write(out_file)
-        compressed_size = os.path.getsize(out_path)
-        if compressed_size >= original_size:
+        if os.path.getsize(out_path) >= original_size:
             os.remove(out_path)
             import shutil
             shutil.copy2(f['path'], out_path)
             out_name = f"{base_name}_original.pdf"
             out_path = os.path.join(app.config['CONVERTED_FOLDER'], out_name)
-    except Exception as e:
+    except:
         import shutil
         shutil.copy2(f['path'], out_path)
         out_name = f"{base_name}_copy.pdf"
         out_path = os.path.join(app.config['CONVERTED_FOLDER'], out_name)
     return out_path, out_name
 
-# ================= WORD TO PDF USING WEASYPRINT (NO CONFLICTS) =================
-
-def get_dejavu_font():
+# ================= WORD TO PDF USING FPDF2 (NO CONFLICTS) =================
+def download_dejavu_font():
     font_dir = app.config['FONTS_FOLDER']
     font_path = os.path.join(font_dir, 'DejaVuSans.ttf')
     if not os.path.exists(font_path):
@@ -276,124 +271,87 @@ def word_to_pdf(file_infos):
 
     try:
         doc = Document(f['path'])
-        html_parts = []
-        font_path = get_dejavu_font()
+        font_path = download_dejavu_font()
+        pdf = FPDF(orientation='P', unit='pt', format='A4')
+        pdf.add_page()
+        pdf.add_font('DejaVu', '', font_path, uni=True)
+        pdf.add_font('DejaVu', 'B', font_path, uni=True)
+        pdf.add_font('DejaVu', 'I', font_path, uni=True)
+        pdf.add_font('DejaVu', 'BI', font_path, uni=True)
+        pdf.set_font('DejaVu', size=11)
+        pdf.set_margins(40, 40, 40)
+        pdf.set_auto_page_break(True, margin=40)
 
-        css_rules = f"""
-        @page {{ size: A4; margin: 1.5cm; }}
-        @font-face {{
-            font-family: 'DejaVu';
-            src: url('{font_path}') format('truetype');
-        }}
-        body {{
-            font-family: 'DejaVu', 'Arial', sans-serif;
-            font-size: 11pt;
-            margin: 0;
-            padding: 0;
-            line-height: 1.2;
-        }}
-        h1 {{ font-size: 18pt; font-weight: bold; margin: 12pt 0 8pt; }}
-        h2 {{ font-size: 14pt; font-weight: bold; margin: 10pt 0 6pt; }}
-        h3 {{ font-size: 12pt; font-weight: bold; margin: 8pt 0 4pt; }}
-        p {{ margin: 0 0 6pt 0; }}
-        table {{ border-collapse: collapse; width: 100%; margin: 10pt 0; }}
-        th, td {{ border: 1px solid #ccc; padding: 5pt; vertical-align: top; }}
-        th {{ background: #f5f5f5; font-weight: bold; }}
-        .align-left {{ text-align: left; }}
-        .align-center {{ text-align: center; }}
-        .align-right {{ text-align: right; }}
-        .align-justify {{ text-align: justify; }}
-        """
-
-        def get_color(run):
-            if run.font.color and run.font.color.rgb:
-                rgb = run.font.color.rgb
-                if isinstance(rgb, tuple):
-                    return f"rgb({rgb[0]},{rgb[1]},{rgb[2]})"
-                return str(rgb)
-            return "black"
-
-        def get_size(run):
-            return run.font.size.pt if run.font.size else 11
-
-        def get_align_class(para):
-            if para.alignment:
-                if para.alignment == WD_ALIGN_PARAGRAPH.CENTER:
-                    return 'align-center'
-                elif para.alignment == WD_ALIGN_PARAGRAPH.RIGHT:
-                    return 'align-right'
-                elif para.alignment == WD_ALIGN_PARAGRAPH.JUSTIFY:
-                    return 'align-justify'
-            return 'align-left'
-
-        for para in doc.paragraphs:
-            if not para.text.strip() and not para.runs:
-                html_parts.append('<p>&nbsp;</p>')
-                continue
-            style_name = para.style.name.lower() if para.style else ''
-            if 'heading 1' in style_name or 'title' in style_name:
-                tag = 'h1'
-            elif 'heading 2' in style_name:
-                tag = 'h2'
-            elif 'heading 3' in style_name:
-                tag = 'h3'
+        # Helper to get font style from run
+        def get_fpdf_style(run):
+            style = ''
+            if run.bold and run.italic:
+                style = 'BI'
+            elif run.bold:
+                style = 'B'
+            elif run.italic:
+                style = 'I'
             else:
-                tag = 'p'
-            align_class = get_align_class(para)
-            html_parts.append(f'<{tag} class="{align_class}">')
+                style = ''
+            return style
+
+        def get_font_size(run):
+            if run.font.size:
+                return run.font.size.pt
+            return 11
+
+        # Process paragraphs
+        for para in doc.paragraphs:
+            if not para.text.strip():
+                pdf.ln(8)
+                continue
+            # Get alignment
+            align = 'L'
+            if para.alignment == WD_ALIGN_PARAGRAPH.CENTER:
+                align = 'C'
+            elif para.alignment == WD_ALIGN_PARAGRAPH.RIGHT:
+                align = 'R'
+            elif para.alignment == WD_ALIGN_PARAGRAPH.JUSTIFY:
+                align = 'J'
+            
+            # We'll write each run with appropriate formatting
+            # However, fpdf2's multi_cell doesn't support mid-line style changes easily.
+            # Simpler: combine runs into a single string with HTML-like tags? No.
+            # Alternative: write each run in sequence using cell, but that doesn't wrap.
+            # Better: use `write` which supports style changes.
+            # We'll set initial font and then for each run, if style changes, set it.
+            pdf.set_font('DejaVu', size=11)
+            x_start = pdf.get_x()
+            y_start = pdf.get_y()
             for run in para.runs:
                 if not run.text:
                     continue
-                text = escape(run.text)
-                styles = []
-                if run.bold:
-                    styles.append('font-weight: bold')
-                if run.italic:
-                    styles.append('font-style: italic')
-                if run.underline:
-                    styles.append('text-decoration: underline')
-                size = get_size(run)
-                if size != 11:
-                    styles.append(f'font-size: {size}pt')
-                color = get_color(run)
-                if color != 'black':
-                    styles.append(f'color: {color}')
-                if styles:
-                    html_parts.append(f'<span style="{"; ".join(styles)}">{text}</span>')
-                else:
-                    html_parts.append(text)
-            html_parts.append(f'</{tag}>')
-
+                style = get_fpdf_style(run)
+                size = get_font_size(run)
+                pdf.set_font('DejaVu', style, size)
+                # Write the text (handles wrapping)
+                pdf.write(size * 0.35, run.text)
+            # Move to next line with appropriate spacing
+            pdf.ln(para.paragraph_format.line_spacing or 1.2 * 11)
+            if para.paragraph_format.space_after:
+                pdf.ln(para.paragraph_format.space_after.pt)
+        
+        # Tables (simplified)
         for table in doc.tables:
-            html_parts.append('<table>')
-            for i, row in enumerate(table.rows):
-                html_parts.append('<tr>')
+            for row in table.rows:
                 for cell in row.cells:
-                    tag = 'th' if i == 0 else 'td'
-                    cell_html = []
-                    for para in cell.paragraphs:
-                        if para.text.strip():
-                            cell_html.append(f'<p style="margin:0">{escape(para.text)}</p>')
-                    html_parts.append(f'<{tag}>{"".join(cell_html)}</{tag}>')
-                html_parts.append('</tr>')
-            html_parts.append('<table>')
-
-        full_html = f"""<!DOCTYPE html>
-        <html>
-        <head><meta charset="UTF-8"><style>{css_rules}</style></head>
-        <body>{"".join(html_parts)}</body>
-        </html>"""
-
-        font_config = FontConfiguration()
-        HTML(string=full_html).write_pdf(out_path, font_config=font_config)
+                    pdf.cell(80, 20, cell.text, border=1)
+                pdf.ln()
+            pdf.ln(10)
+        
+        pdf.output(out_path)
         return out_path, out_name
 
     except Exception as e:
-        logging.error(f"Word to PDF error: {str(e)}")
+        logging.error(f"Word to PDF conversion error: {str(e)}")
         raise Exception(f"Word to PDF conversion failed: {str(e)}")
 
-# ================= ROUTES (no split-pdf) =================
-
+# ================= ROUTES =================
 CONVERSION_FUNCTIONS = {
     'merge': merge_pdfs,
     'pdf-to-word': pdf_to_word,
