@@ -1,27 +1,21 @@
 #!/usr/bin/env bash
 set -o errexit
 
-# Update package list and install LibreOffice headless
+# Update and install system dependencies for WeasyPrint
 apt-get update
 apt-get install -y --no-install-recommends \
-    libreoffice-headless \
-    libreoffice-writer \
-    libreoffice-common \
-    poppler-utils \
     libpango-1.0-0 \
     libpangoft2-1.0-0 \
     libffi-dev \
     libcairo2 \
     libgdk-pixbuf2.0-0 \
     libxml2-dev \
-    libxslt1-dev
+    libxslt1-dev \
+    poppler-utils \
+    curl
 
-# Verify installation
-if ! command -v libreoffice &> /dev/null; then
-    echo "ERROR: LibreOffice not installed successfully"
-    exit 1
-fi
-
-# Upgrade pip and install Python requirements
+# Upgrade pip
 pip install --upgrade pip
+
+# Install Python requirements
 pip install -r requirements.txt
