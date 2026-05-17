@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -o errexit
 
-# Install system dependencies for WeasyPrint (and poppler for pdf2image)
+# Install system dependencies for WeasyPrint
 apt-get update && apt-get install -y \
     poppler-utils \
     libpango-1.0-0 \
@@ -12,8 +12,5 @@ apt-get update && apt-get install -y \
     libxml2-dev \
     libxslt1-dev
 
-# Upgrade pip
 pip install --upgrade pip
-
-# Install Python requirements
 pip install -r requirements.txt
