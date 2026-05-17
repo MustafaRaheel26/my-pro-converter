@@ -13,9 +13,13 @@ from PIL import Image
 from docx import Document
 from docx.shared import Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.table import WD_ALIGN_VERTICAL
 from html import escape
-from weasyprint import HTML, CSS
-from weasyprint.text.fonts import FontConfiguration
+import re
+
+# New import for PDF generation
+from xhtml2pdf import pisa
+from io import BytesIO
 
 app = Flask(__name__)
 app.secret_key = "supersecretkeyOmniConverter2026"
@@ -241,12 +245,22 @@ def compress_pdf(file_infos):
         out_path = os.path.join(app.config['CONVERTED_FOLDER'], out_name)
     return out_path, out_name
 
-# ================= FIXED WORD TO PDF (Unicode‑aware fonts) =================
+# ================= PROFESSIONAL WORD TO PDF (xhtml2pdf + Unicode font) =================
+
+def convert_html_to_pdf(source_html, output_pdf_path):
+    """Convert HTML string to PDF using xhtml2pdf with Unicode support."""
+    with open(output_pdf_path, "wb") as pdf_file:
+        pisa_status = pisa.CreatePDF(
+            source_html,
+            dest=pdf_file,
+            encoding='UTF-8'
+        )
+    return not pisa_status.err
 
 def word_to_pdf(file_infos):
     """
-    Convert DOCX to PDF preserving exact formatting and supporting all Unicode characters.
-    Uses a font stack that includes DejaVu Sans, Arial, and Helvetica to cover wide Unicode.
+    Convert DOCX to PDF preserving exact formatting,
+    handling all Unicode characters via embedded Open Sans font.
     """
     if len(file_infos) != 1:
         raise ValueError("Please select exactly 1 Word file to convert to PDF")
@@ -261,30 +275,34 @@ def word_to_pdf(file_infos):
     try:
         doc = Document(f['path'])
         html_parts = []
-        
-        # CSS with broad Unicode font support
-        css_rules = """
-            @page { size: A4; margin: 1.5cm; }
-            body {
-                font-family: 'DejaVu Sans', 'Arial', 'Helvetica', sans-serif;
-                font-size: 11pt;
-                margin: 0;
-                padding: 0;
-                line-height: 1.2;
-            }
-            h1 { font-size: 18pt; font-weight: bold; margin: 12pt 0 8pt; }
-            h2 { font-size: 14pt; font-weight: bold; margin: 10pt 0 6pt; }
-            h3 { font-size: 12pt; font-weight: bold; margin: 8pt 0 4pt; }
-            p { margin: 0 0 6pt 0; }
-            table { border-collapse: collapse; width: 100%; margin: 10pt 0; }
-            th, td { border: 1px solid #ccc; padding: 5pt; vertical-align: top; }
-            th { background: #f5f5f5; font-weight: bold; }
-            .align-left { text-align: left; }
-            .align-center { text-align: center; }
-            .align-right { text-align: right; }
-            .align-justify { text-align: justify; }
+
+        # ---- CSS with embedded Google Font (Open Sans supports Unicode) ----
+        css = """
+        @page {
+            size: A4;
+            margin: 1.5cm;
+        }
+        body {
+            font-family: 'Open Sans', 'DejaVu Sans', 'Arial', sans-serif;
+            font-size: 11pt;
+            margin: 0;
+            padding: 0;
+            line-height: 1.2;
+        }
+        h1 { font-size: 18pt; font-weight: bold; margin: 12pt 0 8pt; }
+        h2 { font-size: 14pt; font-weight: bold; margin: 10pt 0 6pt; }
+        h3 { font-size: 12pt; font-weight: bold; margin: 8pt 0 4pt; }
+        p { margin: 0 0 6pt 0; }
+        table { border-collapse: collapse; width: 100%; margin: 10pt 0; }
+        th, td { border: 1px solid #ccc; padding: 5pt; vertical-align: top; }
+        th { background: #f5f5f5; font-weight: bold; }
+        .align-left { text-align: left; }
+        .align-center { text-align: center; }
+        .align-right { text-align: right; }
+        .align-justify { text-align: justify; }
         """
 
+        # Helper functions
         def get_color(run):
             if run.font.color and run.font.color.rgb:
                 rgb = run.font.color.rgb
@@ -330,7 +348,7 @@ def word_to_pdf(file_infos):
             for run in para.runs:
                 if not run.text:
                     continue
-                text = escape(run.text)   # safe HTML
+                text = escape(run.text)   # escape HTML special chars
                 style_css = []
                 if run.bold:
                     style_css.append("font-weight: bold")
@@ -345,7 +363,7 @@ def word_to_pdf(file_infos):
                 if color != "black":
                     style_css.append(f"color: {color}")
                 if run.font.name:
-                    style_css.append(f"font-family: '{run.font.name}', 'DejaVu Sans', Arial, sans-serif")
+                    style_css.append(f"font-family: '{run.font.name}', 'Open Sans', sans-serif")
 
                 if style_css:
                     html_parts.append(f'<span style="{"; ".join(style_css)}">{text}</span>')
@@ -354,7 +372,7 @@ def word_to_pdf(file_infos):
 
             html_parts.append(f'</{tag}>')
 
-        # Process tables (simplified, but keeps basic formatting)
+        # Process tables
         for table in doc.tables:
             html_parts.append('<table>')
             for i, row in enumerate(table.rows):
@@ -369,24 +387,23 @@ def word_to_pdf(file_infos):
                 html_parts.append('</tr>')
             html_parts.append('</table>')
 
+        # Build full HTML with font embedding
         full_html = f"""<!DOCTYPE html>
         <html>
         <head>
             <meta charset="UTF-8">
-            <style>{css_rules}</style>
+            <link href="https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
+            <style>{css}</style>
         </head>
         <body>
             {''.join(html_parts)}
         </body>
         </html>"""
 
-        # Convert to PDF with font configuration
-        font_config = FontConfiguration()
-        HTML(string=full_html, base_url="").write_pdf(
-            out_path,
-            font_config=font_config,
-            presentational_hints=True
-        )
+        # Convert to PDF
+        success = convert_html_to_pdf(full_html, out_path)
+        if not success:
+            raise Exception("xhtml2pdf failed to generate PDF")
 
         if not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
             raise Exception("PDF generation produced empty file")
