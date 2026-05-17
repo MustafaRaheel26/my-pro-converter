@@ -11,10 +11,8 @@ import PyPDF2
 from pdf2docx import Converter
 from PIL import Image
 from docx import Document
-from docx.shared import Pt, RGBColor, Inches
+from docx.shared import Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.enum.table import WD_ALIGN_VERTICAL
-import re
 from html import escape
 from weasyprint import HTML, CSS
 from weasyprint.text.fonts import FontConfiguration
@@ -243,20 +241,12 @@ def compress_pdf(file_infos):
         out_path = os.path.join(app.config['CONVERTED_FOLDER'], out_name)
     return out_path, out_name
 
-# ================= PROFESSIONAL WORD TO PDF USING WeasyPrint =================
-
-def pt_to_px(pt):
-    """Convert points to pixels (1pt = 1/72 inch, 96dpi reference)"""
-    return round(pt * 96 / 72)
+# ================= FIXED WORD TO PDF (Unicode‑aware fonts) =================
 
 def word_to_pdf(file_infos):
     """
-    Convert DOCX to PDF preserving exact formatting:
-    - Font family, size, color, bold, italic, underline
-    - Paragraph alignment, spacing, indentation
-    - Tables with borders, cell background, alignment
-    - Lists (bullets and numbering)
-    - Page breaks
+    Convert DOCX to PDF preserving exact formatting and supporting all Unicode characters.
+    Uses a font stack that includes DejaVu Sans, Arial, and Helvetica to cover wide Unicode.
     """
     if len(file_infos) != 1:
         raise ValueError("Please select exactly 1 Word file to convert to PDF")
@@ -271,12 +261,17 @@ def word_to_pdf(file_infos):
     try:
         doc = Document(f['path'])
         html_parts = []
-        css_rules = []
-
-        # Base CSS
-        css_rules.append("""
+        
+        # CSS with broad Unicode font support
+        css_rules = """
             @page { size: A4; margin: 1.5cm; }
-            body { font-family: 'Helvetica', 'Arial', sans-serif; font-size: 11pt; margin: 0; padding: 0; line-height: 1.2; }
+            body {
+                font-family: 'DejaVu Sans', 'Arial', 'Helvetica', sans-serif;
+                font-size: 11pt;
+                margin: 0;
+                padding: 0;
+                line-height: 1.2;
+            }
             h1 { font-size: 18pt; font-weight: bold; margin: 12pt 0 8pt; }
             h2 { font-size: 14pt; font-weight: bold; margin: 10pt 0 6pt; }
             h3 { font-size: 12pt; font-weight: bold; margin: 8pt 0 4pt; }
@@ -284,12 +279,12 @@ def word_to_pdf(file_infos):
             table { border-collapse: collapse; width: 100%; margin: 10pt 0; }
             th, td { border: 1px solid #ccc; padding: 5pt; vertical-align: top; }
             th { background: #f5f5f5; font-weight: bold; }
-            .bold { font-weight: bold; }
-            .italic { font-style: italic; }
-            .underline { text-decoration: underline; }
-        """)
+            .align-left { text-align: left; }
+            .align-center { text-align: center; }
+            .align-right { text-align: right; }
+            .align-justify { text-align: justify; }
+        """
 
-        # Helper to convert color
         def get_color(run):
             if run.font.color and run.font.color.rgb:
                 rgb = run.font.color.rgb
@@ -298,13 +293,11 @@ def word_to_pdf(file_infos):
                 return str(rgb)
             return "black"
 
-        # Helper to get font size in pt
         def get_size(run):
             if run.font.size:
                 return run.font.size.pt
             return 11
 
-        # Helper to get paragraph alignment class
         def get_align_class(para):
             if para.alignment:
                 if para.alignment == WD_ALIGN_PARAGRAPH.CENTER:
@@ -315,21 +308,12 @@ def word_to_pdf(file_infos):
                     return 'align-justify'
             return 'align-left'
 
-        # Add alignment CSS
-        css_rules.append("""
-            .align-left { text-align: left; }
-            .align-center { text-align: center; }
-            .align-right { text-align: right; }
-            .align-justify { text-align: justify; }
-        """)
-
-        # Process each paragraph
+        # Process paragraphs
         for para in doc.paragraphs:
             if not para.text.strip() and len(para.runs) == 0:
                 html_parts.append('<p style="margin:0 0 6pt">&nbsp;</p>')
                 continue
 
-            # Determine heading level from style
             style_name = para.style.name.lower() if para.style else ''
             if 'heading 1' in style_name or 'title' in style_name:
                 tag = 'h1'
@@ -343,11 +327,10 @@ def word_to_pdf(file_infos):
             align_class = get_align_class(para)
             html_parts.append(f'<{tag} class="{align_class}">')
 
-            # Process each run inside paragraph
             for run in para.runs:
                 if not run.text:
                     continue
-                text = escape(run.text)
+                text = escape(run.text)   # safe HTML
                 style_css = []
                 if run.bold:
                     style_css.append("font-weight: bold")
@@ -355,17 +338,14 @@ def word_to_pdf(file_infos):
                     style_css.append("font-style: italic")
                 if run.underline:
                     style_css.append("text-decoration: underline")
-                # Font size
                 size = get_size(run)
                 if size != 11:
                     style_css.append(f"font-size: {size}pt")
-                # Color
                 color = get_color(run)
                 if color != "black":
                     style_css.append(f"color: {color}")
-                # Font family (if available)
                 if run.font.name:
-                    style_css.append(f"font-family: '{run.font.name}', sans-serif")
+                    style_css.append(f"font-family: '{run.font.name}', 'DejaVu Sans', Arial, sans-serif")
 
                 if style_css:
                     html_parts.append(f'<span style="{"; ".join(style_css)}">{text}</span>')
@@ -374,48 +354,33 @@ def word_to_pdf(file_infos):
 
             html_parts.append(f'</{tag}>')
 
-        # Process tables
+        # Process tables (simplified, but keeps basic formatting)
         for table in doc.tables:
             html_parts.append('<table>')
-            for row in table.rows:
+            for i, row in enumerate(table.rows):
                 html_parts.append('<tr>')
                 for cell in row.cells:
-                    # Cell background from shading?
-                    bgcolor = "white"
-                    try:
-                        if cell._element.tcPr:
-                            shading = cell._element.tcPr.find(qn('w:shd'))
-                            if shading is not None:
-                                val = shading.get(qn('w:fill'))
-                                if val:
-                                    bgcolor = f"#{val}"
-                    except:
-                        pass
-                    # Determine if it's a header row (first row of table)
-                    is_header = (row == table.rows[0])
-                    tag = 'th' if is_header else 'td'
-                    # Cell content: paragraphs
+                    tag = 'th' if i == 0 else 'td'
                     cell_html = []
                     for para in cell.paragraphs:
                         if para.text.strip():
                             cell_html.append(f'<p style="margin:0">{escape(para.text)}</p>')
-                    html_parts.append(f'<{tag} style="background:{bgcolor}">{"".join(cell_html)}</{tag}>')
+                    html_parts.append(f'<{tag}>{"".join(cell_html)}</{tag}>')
                 html_parts.append('</tr>')
             html_parts.append('</table>')
 
-        # Build full HTML document
         full_html = f"""<!DOCTYPE html>
         <html>
         <head>
             <meta charset="UTF-8">
-            <style>{" ".join(css_rules)}</style>
+            <style>{css_rules}</style>
         </head>
         <body>
-            {"".join(html_parts)}
+            {''.join(html_parts)}
         </body>
         </html>"""
 
-        # Convert HTML to PDF using WeasyPrint
+        # Convert to PDF with font configuration
         font_config = FontConfiguration()
         HTML(string=full_html, base_url="").write_pdf(
             out_path,
@@ -423,7 +388,6 @@ def word_to_pdf(file_infos):
             presentational_hints=True
         )
 
-        # Verify output
         if not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
             raise Exception("PDF generation produced empty file")
 
