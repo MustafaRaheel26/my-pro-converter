@@ -235,66 +235,79 @@ def compress_pdf(file_infos):
         out_path = os.path.join(app.config['CONVERTED_FOLDER'], out_name)
     return out_path, out_name
 
-# ================= WORD TO PDF USING LIBREOFFICE =================
+# ================= WORD TO PDF WITH LIBREOFFICE =================
+
+def find_libreoffice():
+    """Locate libreoffice binary in common paths."""
+    possible_paths = ['/usr/bin/libreoffice', '/usr/bin/libreoffice-headless', '/usr/local/bin/libreoffice']
+    for path in possible_paths:
+        if os.path.exists(path) and os.access(path, os.X_OK):
+            return path
+    # Try using 'which' command
+    try:
+        result = subprocess.run(['which', 'libreoffice'], capture_output=True, text=True)
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+    except:
+        pass
+    return None
 
 def word_to_pdf(file_infos):
     """
-    Convert DOCX to PDF using LibreOffice headless mode.
-    Preserves 100% of formatting, fonts, tables, and layout.
+    Convert DOCX to PDF using LibreOffice.
     """
     if len(file_infos) != 1:
-        raise ValueError("Please select exactly 1 Word file to convert to PDF")
+        raise ValueError("Please select exactly 1 Word file")
     f = file_infos[0]
     if f['ext'] != 'docx':
-        raise ValueError(f"File '{f['original']}' is not a DOCX")
+        raise ValueError("Not a DOCX file")
 
     base_name = f['original'].rsplit('.', 1)[0]
     out_name = f"{base_name}.pdf"
     out_path = os.path.join(app.config['CONVERTED_FOLDER'], out_name)
 
+    libreoffice_path = find_libreoffice()
+    if not libreoffice_path:
+        raise Exception("LibreOffice not found on system. Please contact support.")
+
     try:
-        # Run LibreOffice conversion
         cmd = [
-            'libreoffice',
+            libreoffice_path,
             '--headless',
             '--convert-to', 'pdf',
             '--outdir', app.config['CONVERTED_FOLDER'],
             f['path']
         ]
-        logging.info(f"Running LibreOffice: {' '.join(cmd)}")
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        logging.info(f"Running: {' '.join(cmd)}")
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=90)
         
         if result.returncode != 0:
-            logging.error(f"LibreOffice error: {result.stderr}")
+            logging.error(f"LibreOffice stderr: {result.stderr}")
             raise Exception(f"LibreOffice conversion failed (code {result.returncode})")
         
-        # LibreOffice saves with same base name as input file, but input file has a UUID name.
-        # We need to find the generated PDF file.
-        input_filename = os.path.basename(f['path'])
-        input_base = os.path.splitext(input_filename)[0]
-        generated_pdf = os.path.join(app.config['CONVERTED_FOLDER'], f"{input_base}.pdf")
+        # Find generated PDF
+        input_basename = os.path.basename(f['path']).rsplit('.', 1)[0]
+        generated_pdf = os.path.join(app.config['CONVERTED_FOLDER'], f"{input_basename}.pdf")
         
         if os.path.exists(generated_pdf):
-            # Rename to desired output name
             if generated_pdf != out_path:
                 shutil.move(generated_pdf, out_path)
         else:
-            # Fallback: find the most recent PDF file in the folder
-            pdf_files = [p for p in os.listdir(app.config['CONVERTED_FOLDER']) if p.endswith('.pdf')]
-            if not pdf_files:
-                raise Exception("No PDF file was generated")
-            # Get the most recently created
-            latest = max([os.path.join(app.config['CONVERTED_FOLDER'], p) for p in pdf_files], key=os.path.getctime)
+            # Fallback: get the latest PDF in folder
+            pdfs = [os.path.join(app.config['CONVERTED_FOLDER'], p) for p in os.listdir(app.config['CONVERTED_FOLDER']) if p.endswith('.pdf')]
+            if not pdfs:
+                raise Exception("No PDF was generated")
+            latest = max(pdfs, key=os.path.getctime)
             if latest != out_path:
                 shutil.move(latest, out_path)
         
         if not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
-            raise Exception("PDF file is empty or missing")
+            raise Exception("Generated PDF is empty")
         
         return out_path, out_name
         
     except subprocess.TimeoutExpired:
-        raise Exception("LibreOffice conversion timed out after 60 seconds")
+        raise Exception("LibreOffice conversion timed out (took >90 seconds)")
     except Exception as e:
         logging.error(f"Word to PDF error: {str(e)}")
         raise Exception(f"Word to PDF conversion failed: {str(e)}")
