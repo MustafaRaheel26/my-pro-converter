@@ -11,16 +11,21 @@ import PyPDF2
 from pdf2docx import Converter
 from PIL import Image
 from docx import Document
-import subprocess
-import shutil
+from docx.shared import Pt
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from html import escape
+import requests
+from weasyprint import HTML
+from weasyprint.text.fonts import FontConfiguration
 
 app = Flask(__name__)
 app.secret_key = "supersecretkeyOmniConverter2026"
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['CONVERTED_FOLDER'] = 'converted'
+app.config['FONTS_FOLDER'] = 'fonts'
 
-for folder in [app.config['UPLOAD_FOLDER'], app.config['CONVERTED_FOLDER']]:
+for folder in [app.config['UPLOAD_FOLDER'], app.config['CONVERTED_FOLDER'], app.config['FONTS_FOLDER']]:
     os.makedirs(folder, exist_ok=True)
 
 logging.basicConfig(level=logging.INFO)
@@ -100,7 +105,8 @@ def save_files(files):
             })
     return saved
 
-# ================= OTHER CONVERSIONS =================
+# ================= OTHER CONVERSIONS (unchanged) =================
+
 def merge_pdfs(file_infos):
     if len(file_infos) != 2:
         raise ValueError("Please select exactly 2 PDF files to merge")
@@ -226,93 +232,212 @@ def compress_pdf(file_infos):
         compressed_size = os.path.getsize(out_path)
         if compressed_size >= original_size:
             os.remove(out_path)
+            import shutil
             shutil.copy2(f['path'], out_path)
             out_name = f"{base_name}_original.pdf"
             out_path = os.path.join(app.config['CONVERTED_FOLDER'], out_name)
     except Exception:
+        import shutil
         shutil.copy2(f['path'], out_path)
         out_name = f"{base_name}_copy.pdf"
         out_path = os.path.join(app.config['CONVERTED_FOLDER'], out_name)
     return out_path, out_name
 
-# ================= WORD TO PDF WITH LIBREOFFICE =================
+# ================= WORD TO PDF – WEASYPRINT + EMBEDDED UNICODE FONT =================
 
-def find_libreoffice():
-    """Locate libreoffice binary in common paths."""
-    possible_paths = ['/usr/bin/libreoffice', '/usr/bin/libreoffice-headless', '/usr/local/bin/libreoffice']
-    for path in possible_paths:
-        if os.path.exists(path) and os.access(path, os.X_OK):
-            return path
-    # Try using 'which' command
-    try:
-        result = subprocess.run(['which', 'libreoffice'], capture_output=True, text=True)
-        if result.returncode == 0 and result.stdout.strip():
-            return result.stdout.strip()
-    except:
-        pass
-    return None
+def download_font():
+    """Download DejaVu Sans font from CDN to local fonts folder."""
+    font_dir = app.config['FONTS_FOLDER']
+    font_path = os.path.join(font_dir, 'DejaVuSans.ttf')
+    if not os.path.exists(font_path):
+        logging.info("Downloading DejaVu Sans font...")
+        url = "https://github.com/dejavu-fonts/dejavu-fonts/raw/master/ttf/DejaVuSans.ttf"
+        try:
+            r = requests.get(url, timeout=30)
+            if r.status_code == 200:
+                with open(font_path, 'wb') as f:
+                    f.write(r.content)
+                logging.info("Font downloaded successfully.")
+            else:
+                logging.warning("Could not download font. Will use system fallback.")
+        except Exception as e:
+            logging.warning(f"Font download failed: {e}")
+    return font_path
 
 def word_to_pdf(file_infos):
     """
-    Convert DOCX to PDF using LibreOffice.
+    Convert DOCX to PDF using WeasyPrint with embedded DejaVu Sans font.
+    Preserves formatting, font sizes, colors, tables, and supports all Unicode characters.
     """
     if len(file_infos) != 1:
-        raise ValueError("Please select exactly 1 Word file")
+        raise ValueError("Please select exactly 1 Word file to convert to PDF")
     f = file_infos[0]
     if f['ext'] != 'docx':
-        raise ValueError("Not a DOCX file")
+        raise ValueError(f"File '{f['original']}' is not a DOCX")
 
     base_name = f['original'].rsplit('.', 1)[0]
     out_name = f"{base_name}.pdf"
     out_path = os.path.join(app.config['CONVERTED_FOLDER'], out_name)
 
-    libreoffice_path = find_libreoffice()
-    if not libreoffice_path:
-        raise Exception("LibreOffice not found on system. Please contact support.")
-
     try:
-        cmd = [
-            libreoffice_path,
-            '--headless',
-            '--convert-to', 'pdf',
-            '--outdir', app.config['CONVERTED_FOLDER'],
-            f['path']
-        ]
-        logging.info(f"Running: {' '.join(cmd)}")
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=90)
+        doc = Document(f['path'])
+        html_parts = []
+        font_path = download_font()
         
-        if result.returncode != 0:
-            logging.error(f"LibreOffice stderr: {result.stderr}")
-            raise Exception(f"LibreOffice conversion failed (code {result.returncode})")
+        # CSS with embedded font
+        font_face = ""
+        if os.path.exists(font_path):
+            font_face = f"""
+            @font-face {{
+                font-family: 'DejaVuSans';
+                src: url('{font_path}') format('truetype');
+                font-weight: normal;
+                font-style: normal;
+            }}
+            @font-face {{
+                font-family: 'DejaVuSans';
+                src: url('{font_path}') format('truetype');
+                font-weight: bold;
+                font-style: normal;
+            }}
+            @font-face {{
+                font-family: 'DejaVuSans';
+                src: url('{font_path}') format('truetype');
+                font-weight: normal;
+                font-style: italic;
+            }}
+            @font-face {{
+                font-family: 'DejaVuSans';
+                src: url('{font_path}') format('truetype');
+                font-weight: bold;
+                font-style: italic;
+            }}
+            """
         
-        # Find generated PDF
-        input_basename = os.path.basename(f['path']).rsplit('.', 1)[0]
-        generated_pdf = os.path.join(app.config['CONVERTED_FOLDER'], f"{input_basename}.pdf")
-        
-        if os.path.exists(generated_pdf):
-            if generated_pdf != out_path:
-                shutil.move(generated_pdf, out_path)
-        else:
-            # Fallback: get the latest PDF in folder
-            pdfs = [os.path.join(app.config['CONVERTED_FOLDER'], p) for p in os.listdir(app.config['CONVERTED_FOLDER']) if p.endswith('.pdf')]
-            if not pdfs:
-                raise Exception("No PDF was generated")
-            latest = max(pdfs, key=os.path.getctime)
-            if latest != out_path:
-                shutil.move(latest, out_path)
-        
+        css_rules = f"""
+        {font_face}
+        @page {{ size: A4; margin: 1.5cm; }}
+        body {{
+            font-family: 'DejaVuSans', 'Arial', 'Helvetica', sans-serif;
+            font-size: 11pt;
+            margin: 0;
+            padding: 0;
+            line-height: 1.2;
+        }}
+        h1 {{ font-size: 18pt; font-weight: bold; margin: 12pt 0 8pt; }}
+        h2 {{ font-size: 14pt; font-weight: bold; margin: 10pt 0 6pt; }}
+        h3 {{ font-size: 12pt; font-weight: bold; margin: 8pt 0 4pt; }}
+        p {{ margin: 0 0 6pt 0; }}
+        table {{ border-collapse: collapse; width: 100%; margin: 10pt 0; }}
+        th, td {{ border: 1px solid #ccc; padding: 5pt; vertical-align: top; }}
+        th {{ background: #f5f5f5; font-weight: bold; }}
+        .align-left {{ text-align: left; }}
+        .align-center {{ text-align: center; }}
+        .align-right {{ text-align: right; }}
+        .align-justify {{ text-align: justify; }}
+        """
+
+        def get_color(run):
+            if run.font.color and run.font.color.rgb:
+                rgb = run.font.color.rgb
+                if isinstance(rgb, tuple):
+                    return f"rgb({rgb[0]},{rgb[1]},{rgb[2]})"
+                return str(rgb)
+            return "black"
+
+        def get_size(run):
+            return run.font.size.pt if run.font.size else 11
+
+        def get_align_class(para):
+            if para.alignment:
+                if para.alignment == WD_ALIGN_PARAGRAPH.CENTER:
+                    return 'align-center'
+                elif para.alignment == WD_ALIGN_PARAGRAPH.RIGHT:
+                    return 'align-right'
+                elif para.alignment == WD_ALIGN_PARAGRAPH.JUSTIFY:
+                    return 'align-justify'
+            return 'align-left'
+
+        # Process paragraphs
+        for para in doc.paragraphs:
+            if not para.text.strip() and not para.runs:
+                html_parts.append('<p>&nbsp;</p>')
+                continue
+            style_name = para.style.name.lower() if para.style else ''
+            if 'heading 1' in style_name or 'title' in style_name:
+                tag = 'h1'
+            elif 'heading 2' in style_name:
+                tag = 'h2'
+            elif 'heading 3' in style_name:
+                tag = 'h3'
+            else:
+                tag = 'p'
+            align_class = get_align_class(para)
+            html_parts.append(f'<{tag} class="{align_class}">')
+            for run in para.runs:
+                if not run.text:
+                    continue
+                text = escape(run.text)
+                style_list = []
+                if run.bold:
+                    style_list.append('font-weight: bold')
+                if run.italic:
+                    style_list.append('font-style: italic')
+                if run.underline:
+                    style_list.append('text-decoration: underline')
+                size = get_size(run)
+                if size != 11:
+                    style_list.append(f'font-size: {size}pt')
+                color = get_color(run)
+                if color != 'black':
+                    style_list.append(f'color: {color}')
+                if run.font.name:
+                    style_list.append(f"font-family: '{run.font.name}', 'DejaVuSans', sans-serif")
+                if style_list:
+                    html_parts.append(f'<span style="{"; ".join(style_list)}">{text}</span>')
+                else:
+                    html_parts.append(text)
+            html_parts.append(f'</{tag}>')
+
+        # Process tables
+        for table in doc.tables:
+            html_parts.append('<table>')
+            for i, row in enumerate(table.rows):
+                html_parts.append('<tr>')
+                for cell in row.cells:
+                    tag = 'th' if i == 0 else 'td'
+                    cell_html = []
+                    for para in cell.paragraphs:
+                        if para.text.strip():
+                            cell_html.append(f'<p style="margin:0">{escape(para.text)}</p>')
+                    html_parts.append(f'<{tag}>{"".join(cell_html)}</{tag}>')
+                html_parts.append('</tr>')
+            html_parts.append('</table>')
+
+        full_html = f"""<!DOCTYPE html>
+        <html>
+        <head><meta charset="UTF-8"><style>{css_rules}</style></head>
+        <body>{"".join(html_parts)}</body>
+        </html>"""
+
+        # Generate PDF with WeasyPrint
+        font_config = FontConfiguration()
+        HTML(string=full_html, base_url="").write_pdf(
+            out_path,
+            font_config=font_config,
+            presentational_hints=True
+        )
+
         if not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
-            raise Exception("Generated PDF is empty")
-        
+            raise Exception("PDF generation produced empty file")
+
         return out_path, out_name
-        
-    except subprocess.TimeoutExpired:
-        raise Exception("LibreOffice conversion timed out (took >90 seconds)")
+
     except Exception as e:
-        logging.error(f"Word to PDF error: {str(e)}")
+        logging.error(f"Word to PDF conversion error: {str(e)}")
         raise Exception(f"Word to PDF conversion failed: {str(e)}")
 
-# ================= ROUTES =================
+# ================= ROUTES (split-pdf removed) =================
 
 CONVERSION_FUNCTIONS = {
     'merge': merge_pdfs,
