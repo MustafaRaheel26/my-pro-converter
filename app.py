@@ -16,8 +16,8 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from html import escape
 import requests
 
-# WeasyPrint for PDF generation
-from weasyprint import HTML, CSS
+# Only WeasyPrint for PDF generation – no xhtml2pdf, no reportlab PDF class
+from weasyprint import HTML
 from weasyprint.text.fonts import FontConfiguration
 
 app = Flask(__name__)
@@ -83,7 +83,7 @@ def cleanup_old_files():
 
 threading.Thread(target=cleanup_old_files, daemon=True).start()
 
-# ================= HELPER =================
+# ================= HELPERS =================
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
@@ -245,10 +245,10 @@ def compress_pdf(file_infos):
         out_path = os.path.join(app.config['CONVERTED_FOLDER'], out_name)
     return out_path, out_name
 
-# ================= PROPER WORD TO PDF (WeasyPrint + local Unicode font) =================
+# ================= FIXED WORD TO PDF (WeasyPrint + Unicode Font) =================
 
-def download_font_if_missing():
-    """Download DejaVuSans.ttf from a reliable CDN if not present."""
+def get_unicode_font():
+    """Download DejaVu Sans font if missing and return its path."""
     font_dir = app.config['FONTS_FOLDER']
     font_path = os.path.join(font_dir, 'DejaVuSans.ttf')
     if not os.path.exists(font_path):
@@ -261,15 +261,17 @@ def download_font_if_missing():
                     f.write(r.content)
                 logging.info("Font downloaded successfully.")
             else:
-                logging.warning("Could not download font, will rely on system fonts.")
+                logging.warning("Could not download font.")
+                return None
         except Exception as e:
             logging.warning(f"Font download failed: {e}")
+            return None
     return font_path
 
 def word_to_pdf(file_infos):
     """
-    Convert DOCX to PDF preserving exact formatting and handling all Unicode characters.
-    Uses a downloadable DejaVu Sans font to guarantee character support.
+    Convert DOCX to PDF preserving all formatting and supporting all Unicode characters.
+    Uses WeasyPrint with embedded DejaVu Sans font.
     """
     if len(file_infos) != 1:
         raise ValueError("Please select exactly 1 Word file to convert to PDF")
@@ -281,62 +283,65 @@ def word_to_pdf(file_infos):
     out_name = f"{base_name}.pdf"
     out_path = os.path.join(app.config['CONVERTED_FOLDER'], out_name)
 
-    # Ensure we have the Unicode font
-    font_path = download_font_if_missing()
-    
     try:
         doc = Document(f['path'])
         html_parts = []
         
-        # CSS with @font-face to load DejaVu Sans (supports all Unicode)
-        css_rules = f"""
-        @page {{
-            size: A4;
-            margin: 1.5cm;
-        }}
-        @font-face {{
-            font-family: 'DejaVu Sans';
-            src: url('{font_path}') format('truetype');
-            font-weight: normal;
-            font-style: normal;
-        }}
-        @font-face {{
-            font-family: 'DejaVu Sans';
-            src: url('{font_path}') format('truetype');
-            font-weight: bold;
-            font-style: normal;
-        }}
-        @font-face {{
-            font-family: 'DejaVu Sans';
-            src: url('{font_path}') format('truetype');
-            font-weight: normal;
-            font-style: italic;
-        }}
-        @font-face {{
-            font-family: 'DejaVu Sans';
-            src: url('{font_path}') format('truetype');
-            font-weight: bold;
-            font-style: italic;
-        }}
-        body {{
+        font_path = get_unicode_font()
+        
+        # Base CSS
+        css_rules = """
+        @page { size: A4; margin: 1.5cm; }
+        body {
             font-family: 'DejaVu Sans', 'Arial', 'Helvetica', sans-serif;
             font-size: 11pt;
             margin: 0;
             padding: 0;
             line-height: 1.2;
-        }}
-        h1 {{ font-size: 18pt; font-weight: bold; margin: 12pt 0 8pt; }}
-        h2 {{ font-size: 14pt; font-weight: bold; margin: 10pt 0 6pt; }}
-        h3 {{ font-size: 12pt; font-weight: bold; margin: 8pt 0 4pt; }}
-        p {{ margin: 0 0 6pt 0; }}
-        table {{ border-collapse: collapse; width: 100%; margin: 10pt 0; }}
-        th, td {{ border: 1px solid #ccc; padding: 5pt; vertical-align: top; }}
-        th {{ background: #f5f5f5; font-weight: bold; }}
-        .align-left {{ text-align: left; }}
-        .align-center {{ text-align: center; }}
-        .align-right {{ text-align: right; }}
-        .align-justify {{ text-align: justify; }}
+        }
+        h1 { font-size: 18pt; font-weight: bold; margin: 12pt 0 8pt; }
+        h2 { font-size: 14pt; font-weight: bold; margin: 10pt 0 6pt; }
+        h3 { font-size: 12pt; font-weight: bold; margin: 8pt 0 4pt; }
+        p { margin: 0 0 6pt 0; }
+        table { border-collapse: collapse; width: 100%; margin: 10pt 0; }
+        th, td { border: 1px solid #ccc; padding: 5pt; vertical-align: top; }
+        th { background: #f5f5f5; font-weight: bold; }
+        .align-left { text-align: left; }
+        .align-center { text-align: center; }
+        .align-right { text-align: right; }
+        .align-justify { text-align: justify; }
         """
+        
+        # Add @font-face if font is available
+        if font_path:
+            font_url = f"file://{font_path}"
+            font_face = f"""
+            @font-face {{
+                font-family: 'DejaVu Sans';
+                src: url('{font_url}') format('truetype');
+                font-weight: normal;
+                font-style: normal;
+            }}
+            @font-face {{
+                font-family: 'DejaVu Sans';
+                src: url('{font_url}') format('truetype');
+                font-weight: bold;
+                font-style: normal;
+            }}
+            @font-face {{
+                font-family: 'DejaVu Sans';
+                src: url('{font_url}') format('truetype');
+                font-weight: normal;
+                font-style: italic;
+            }}
+            @font-face {{
+                font-family: 'DejaVu Sans';
+                src: url('{font_url}') format('truetype');
+                font-weight: bold;
+                font-style: italic;
+            }}
+            """
+            css_rules = font_face + css_rules
 
         # Helper functions
         def get_color(run):
@@ -384,7 +389,7 @@ def word_to_pdf(file_infos):
             for run in para.runs:
                 if not run.text:
                     continue
-                text = escape(run.text)   # escape HTML special chars
+                text = escape(run.text)
                 style_css = []
                 if run.bold:
                     style_css.append("font-weight: bold")
@@ -434,7 +439,7 @@ def word_to_pdf(file_infos):
         </body>
         </html>"""
 
-        # Generate PDF using WeasyPrint with our font configuration
+        # Generate PDF using WeasyPrint
         font_config = FontConfiguration()
         HTML(string=full_html, base_url="").write_pdf(
             out_path,
