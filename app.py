@@ -100,8 +100,7 @@ def save_files(files):
             })
     return saved
 
-# ================= OTHER CONVERSIONS (unchanged) =================
-
+# ================= OTHER CONVERSIONS =================
 def merge_pdfs(file_infos):
     if len(file_infos) != 2:
         raise ValueError("Please select exactly 2 PDF files to merge")
@@ -230,18 +229,18 @@ def compress_pdf(file_infos):
             shutil.copy2(f['path'], out_path)
             out_name = f"{base_name}_original.pdf"
             out_path = os.path.join(app.config['CONVERTED_FOLDER'], out_name)
-    except Exception as e:
+    except Exception:
         shutil.copy2(f['path'], out_path)
         out_name = f"{base_name}_copy.pdf"
         out_path = os.path.join(app.config['CONVERTED_FOLDER'], out_name)
     return out_path, out_name
 
-# ================= WORD TO PDF USING LIBREOFFICE (NO PYTHON PDF LIBRARIES) =================
+# ================= WORD TO PDF USING LIBREOFFICE =================
 
 def word_to_pdf(file_infos):
     """
-    Convert DOCX to PDF using LibreOffice in headless mode.
-    This preserves 100% of formatting, fonts, tables, and layout.
+    Convert DOCX to PDF using LibreOffice headless mode.
+    Preserves 100% of formatting, fonts, tables, and layout.
     """
     if len(file_infos) != 1:
         raise ValueError("Please select exactly 1 Word file to convert to PDF")
@@ -254,11 +253,7 @@ def word_to_pdf(file_infos):
     out_path = os.path.join(app.config['CONVERTED_FOLDER'], out_name)
 
     try:
-        # Run LibreOffice headless conversion
-        # --headless: no GUI
-        # --convert-to pdf: output format
-        # --outdir: output directory
-        # The input file is the last argument
+        # Run LibreOffice conversion
         cmd = [
             'libreoffice',
             '--headless',
@@ -266,61 +261,45 @@ def word_to_pdf(file_infos):
             '--outdir', app.config['CONVERTED_FOLDER'],
             f['path']
         ]
-        logging.info(f"Running LibreOffice command: {' '.join(cmd)}")
-        
+        logging.info(f"Running LibreOffice: {' '.join(cmd)}")
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
         
         if result.returncode != 0:
-            logging.error(f"LibreOffice stderr: {result.stderr}")
-            raise Exception(f"LibreOffice conversion failed with code {result.returncode}")
+            logging.error(f"LibreOffice error: {result.stderr}")
+            raise Exception(f"LibreOffice conversion failed (code {result.returncode})")
         
-        # LibreOffice saves the PDF in the same directory as input with same base name
-        # but we have a unique name for the input file. The output will be named
-        # based on the input file's basename (without path) but with .pdf extension.
-        # Our input file is at f['path'] which is something like 'uploads/uuid.docx'.
-        # The output will be 'converted/uuid.pdf'? Actually LibreOffice uses the original
-        # filename (without the unique part) because we gave it f['path'].
-        # Let's search for the PDF file that was just created.
-        input_basename = os.path.basename(f['path']).rsplit('.', 1)[0]
-        expected_output = os.path.join(app.config['CONVERTED_FOLDER'], f"{input_basename}.pdf")
+        # LibreOffice saves with same base name as input file, but input file has a UUID name.
+        # We need to find the generated PDF file.
+        input_filename = os.path.basename(f['path'])
+        input_base = os.path.splitext(input_filename)[0]
+        generated_pdf = os.path.join(app.config['CONVERTED_FOLDER'], f"{input_base}.pdf")
         
-        # If that file exists, rename it to our desired out_name
-        if os.path.exists(expected_output):
-            # If the desired out_path is different, rename
-            if expected_output != out_path:
-                shutil.move(expected_output, out_path)
+        if os.path.exists(generated_pdf):
+            # Rename to desired output name
+            if generated_pdf != out_path:
+                shutil.move(generated_pdf, out_path)
         else:
-            # Maybe LibreOffice used the original filename (without the UUID prefix)? No, it uses the exact filename.
-            # But sometimes it adds a number? Let's list the converted folder.
-            files_in_converted = os.listdir(app.config['CONVERTED_FOLDER'])
-            pdf_files = [f for f in files_in_converted if f.endswith('.pdf')]
-            # Find the most recently created PDF
-            latest = None
-            latest_time = 0
-            for pdf_file in pdf_files:
-                pdf_path = os.path.join(app.config['CONVERTED_FOLDER'], pdf_file)
-                mtime = os.path.getmtime(pdf_path)
-                if mtime > latest_time:
-                    latest_time = mtime
-                    latest = pdf_path
-            if latest and latest != out_path:
+            # Fallback: find the most recent PDF file in the folder
+            pdf_files = [p for p in os.listdir(app.config['CONVERTED_FOLDER']) if p.endswith('.pdf')]
+            if not pdf_files:
+                raise Exception("No PDF file was generated")
+            # Get the most recently created
+            latest = max([os.path.join(app.config['CONVERTED_FOLDER'], p) for p in pdf_files], key=os.path.getctime)
+            if latest != out_path:
                 shutil.move(latest, out_path)
-            else:
-                raise Exception("Could not locate the converted PDF file")
         
-        # Verify output
         if not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
-            raise Exception("PDF generation produced empty file")
+            raise Exception("PDF file is empty or missing")
         
         return out_path, out_name
         
     except subprocess.TimeoutExpired:
-        raise Exception("Conversion timed out (LibreOffice took too long)")
+        raise Exception("LibreOffice conversion timed out after 60 seconds")
     except Exception as e:
-        logging.error(f"Word to PDF conversion error: {str(e)}")
-        raise Exception(f"Failed to convert Word to PDF: {str(e)}")
+        logging.error(f"Word to PDF error: {str(e)}")
+        raise Exception(f"Word to PDF conversion failed: {str(e)}")
 
-# ================= ROUTES (no split-pdf) =================
+# ================= ROUTES =================
 
 CONVERSION_FUNCTIONS = {
     'merge': merge_pdfs,
