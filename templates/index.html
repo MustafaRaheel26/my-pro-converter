@@ -45,7 +45,6 @@
         <a href="#home" class="active">Home</a>
         <a href="#pdf-tools">PDF Tools</a>
         <a href="#image-tools">Image Tools</a>
-        <a href="#document-tools">Document</a>
         <a href="#all-tools">All Tools</a>
         <a href="/terms">Terms</a>
         <a href="/privacy">Privacy</a>
@@ -112,7 +111,7 @@
       <div class="container">
         <div class="section-header">
           <h2>All <span class="gradient-text">Conversion Tools</span></h2>
-          <p>Choose from 9 powerful tools to handle your files</p>
+          <p>Choose from 7 powerful tools to handle your files</p>
         </div>
 
         <!-- PDF Tools -->
@@ -168,20 +167,6 @@
           </div>
         </div>
 
-        <!-- Document Tools -->
-        <div class="tool-category" id="document-tools">
-          <h3>
-            <i class="fas fa-file-alt" style="color: #2ecc71"></i> Document
-            Tools
-          </h3>
-          <div class="tools-grid">
-            <div class="tool-card" data-tool="word-to-pdf">
-              <i class="fas fa-file-pdf"></i>
-              <h4>Word to PDF</h4>
-              <p>Convert DOCX to PDF</p>
-            </div>
-          </div>
-        </div>
       </div>
     </section>
 
@@ -243,8 +228,7 @@
       </div>
     </section>
 
-    <!-- Auth Modals -->
-    <!-- Signup Modal -->
+    <!-- Auth Modals (unchanged) -->
     <div class="auth-modal" id="signup-modal">
       <div class="auth-box">
         <span id="close-signup" class="close-btn">&times;</span>
@@ -256,12 +240,7 @@
         <form method="POST" action="/auth">
           <div class="input-group">
             <i class="fas fa-user"></i>
-            <input
-              type="text"
-              name="username"
-              placeholder="Username"
-              required
-            />
+            <input type="text" name="username" placeholder="Username" required />
           </div>
           <div class="input-group">
             <i class="fas fa-envelope"></i>
@@ -269,12 +248,7 @@
           </div>
           <div class="input-group">
             <i class="fas fa-lock"></i>
-            <input
-              type="password"
-              name="password"
-              placeholder="Password"
-              required
-            />
+            <input type="password" name="password" placeholder="Password" required />
           </div>
           <input type="hidden" name="type" value="signup" />
           <button type="submit" class="auth-submit">
@@ -288,7 +262,6 @@
       </div>
     </div>
 
-    <!-- Login Modal -->
     <div class="auth-modal" id="login-modal">
       <div class="auth-box">
         <span id="close-login" class="close-btn">&times;</span>
@@ -300,21 +273,11 @@
         <form method="POST" action="/auth">
           <div class="input-group">
             <i class="fas fa-user"></i>
-            <input
-              type="text"
-              name="username"
-              placeholder="Username"
-              required
-            />
+            <input type="text" name="username" placeholder="Username" required />
           </div>
           <div class="input-group">
             <i class="fas fa-lock"></i>
-            <input
-              type="password"
-              name="password"
-              placeholder="Password"
-              required
-            />
+            <input type="password" name="password" placeholder="Password" required />
           </div>
           <input type="hidden" name="type" value="login" />
           <button type="submit" class="auth-submit">
