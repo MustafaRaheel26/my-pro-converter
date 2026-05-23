@@ -45,7 +45,6 @@
         <a href="#home" class="active">Home</a>
         <a href="#pdf-tools">PDF Tools</a>
         <a href="#image-tools">Image Tools</a>
-        <a href="#document-tools">Document</a>
         <a href="#all-tools">All Tools</a>
         <a href="/terms">Terms</a>
         <a href="/privacy">Privacy</a>
@@ -112,10 +111,10 @@
       <div class="container">
         <div class="section-header">
           <h2>All <span class="gradient-text">Conversion Tools</span></h2>
-          <p>Choose from 8 powerful tools to handle your files</p>
+          <p>Choose from 7 powerful tools to handle your files</p>
         </div>
 
-        <!-- PDF Tools (Split PDF removed) -->
+        <!-- PDF Tools -->
         <div class="tool-category" id="pdf-tools">
           <h3>
             <i class="fas fa-file-pdf" style="color: #e63946"></i> PDF Tools
@@ -168,28 +167,10 @@
           </div>
         </div>
 
-        <!-- Document Tools -->
-        <div class="tool-category" id="document-tools">
-          <h3>
-            <i class="fas fa-file-alt" style="color: #2ecc71"></i> Document
-            Tools
-          </h3>
-          <div class="tools-grid">
-            <div class="tool-card" data-tool="word-to-pdf">
-              <i class="fas fa-file-pdf"></i>
-              <h4>Word to PDF</h4>
-              <p>Convert DOCX to PDF</p>
-            </div>
-          </div>
-        </div>
       </div>
     </section>
 
-    <!-- How It Works, Benefits, Auth Modals, Footer (same as your original, unchanged) -->
-    <!-- ... keep exactly as your current index.html from line ~150 onwards ... -->
-    <!-- To save space I will not duplicate the entire file, but you must copy the rest from your existing index.html -->
-    <!-- However for completeness, here is the rest: -->
-
+    <!-- How It Works -->
     <section class="how-it-works">
       <div class="container">
         <div class="section-header">
@@ -204,8 +185,8 @@
           </div>
           <div class="step">
             <div class="step-icon"><i class="fas fa-cogs"></i></div>
-            <h3>2. Select Tool</h3>
-            <p>Choose the conversion tool you need</p>
+            <h3>2. Automatic Processing</h3>
+            <p>We process your file instantly in the cloud</p>
           </div>
           <div class="step">
             <div class="step-icon"><i class="fas fa-download"></i></div>
@@ -216,6 +197,7 @@
       </div>
     </section>
 
+    <!-- Benefits -->
     <section class="benefits">
       <div class="container">
         <div class="section-header">
@@ -246,11 +228,107 @@
       </div>
     </section>
 
-    <!-- Auth Modals (same as your original) -->
-    <div class="auth-modal" id="signup-modal">...</div>
-    <div class="auth-modal" id="login-modal">...</div>
+    <!-- Auth Modals (unchanged) -->
+    <div class="auth-modal" id="signup-modal">
+      <div class="auth-box">
+        <span id="close-signup" class="close-btn">&times;</span>
+        <i class="fas fa-user-plus auth-icon"></i>
+        <h3>Create Account</h3>
+        {% if signup_error %}
+        <p class="modal-error">{{ signup_error }}</p>
+        {% endif %}
+        <form method="POST" action="/auth">
+          <div class="input-group">
+            <i class="fas fa-user"></i>
+            <input type="text" name="username" placeholder="Username" required />
+          </div>
+          <div class="input-group">
+            <i class="fas fa-envelope"></i>
+            <input type="email" name="email" placeholder="Email" required />
+          </div>
+          <div class="input-group">
+            <i class="fas fa-lock"></i>
+            <input type="password" name="password" placeholder="Password" required />
+          </div>
+          <input type="hidden" name="type" value="signup" />
+          <button type="submit" class="auth-submit">
+            Sign Up <i class="fas fa-arrow-right"></i>
+          </button>
+        </form>
+        <p>
+          Already have an account?
+          <span id="switch-login" class="switch-link">Login</span>
+        </p>
+      </div>
+    </div>
 
-    <footer class="main-footer">...</footer>
+    <div class="auth-modal" id="login-modal">
+      <div class="auth-box">
+        <span id="close-login" class="close-btn">&times;</span>
+        <i class="fas fa-sign-in-alt auth-icon"></i>
+        <h3>Welcome Back</h3>
+        {% if login_error %}
+        <p class="modal-error">{{ login_error }}</p>
+        {% endif %}
+        <form method="POST" action="/auth">
+          <div class="input-group">
+            <i class="fas fa-user"></i>
+            <input type="text" name="username" placeholder="Username" required />
+          </div>
+          <div class="input-group">
+            <i class="fas fa-lock"></i>
+            <input type="password" name="password" placeholder="Password" required />
+          </div>
+          <input type="hidden" name="type" value="login" />
+          <button type="submit" class="auth-submit">
+            Login <i class="fas fa-arrow-right"></i>
+          </button>
+        </form>
+        <p>
+          Don't have an account?
+          <span id="switch-signup" class="switch-link">Sign Up</span>
+        </p>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="main-footer">
+      <div class="footer-container">
+        <div class="footer-content">
+          <div class="footer-section">
+            <h4>Omni Convertor</h4>
+            <p>
+              Your complete solution for file conversion. Fast, secure, and
+              free.
+            </p>
+            <div class="social-links">
+              <a href="#"><i class="fab fa-facebook"></i></a>
+              <a href="#"><i class="fab fa-twitter"></i></a>
+              <a href="#"><i class="fab fa-linkedin"></i></a>
+              <a href="#"><i class="fab fa-github"></i></a>
+            </div>
+          </div>
+          <div class="footer-section">
+            <h4>Quick Links</h4>
+            <ul>
+              <li><a href="#home">Home</a></li>
+              <li><a href="#all-tools">Tools</a></li>
+              <li><a href="/privacy">Privacy Policy</a></li>
+              <li><a href="/terms">Terms of Service</a></li>
+            </ul>
+          </div>
+          <div class="footer-section">
+            <h4>Contact</h4>
+            <p><i class="fas fa-envelope"></i> support@omnicomvertor.com</p>
+            <p><i class="fas fa-phone"></i> +92 300 1234567</p>
+            <p><i class="fas fa-map-marker-alt"></i> Karachi, Pakistan</p>
+          </div>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p>© 2026 Omni Convertor. All rights reserved.</p>
+      </div>
+    </footer>
 
     <script src="{{ url_for('static', filename='js/script.js') }}"></script>
   </body>
